@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, str::FromStr};
+use std::{f32::consts::PI, f64::INFINITY, str::FromStr};
 
 use cgmath::Vector3;
 use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
@@ -13,18 +13,24 @@ pub extern "C" fn init() {
 struct GivenSettings {
     first_needle_x: f64,
     needle_distance: f64,
+    needle_distance_z: f64,
     needle_count: usize,
+    needle_count_z: usize,
     needletop_slope: f64,
     needletop_width: f64,
     outer_needletop_width: f64,
+    outer_holder_height: f64,
     hill_slope: f64,
     hill_slope_z: f64,
     hill_xshift: f64,
+    hill_zshift_outer: f64,
     hill_height: f64,
     hill_middle_pos: f64,
     thickness: f64,
+    outer_thickness: f64,
     steel_thickness: f64,
     penetration_angle: f64,
+    holder_gap: f64,
 
     needle_ys: Vec<f64>,
     needle_xs1: Vec<f64>,
@@ -35,12 +41,13 @@ struct GivenSettings {
 
 #[derive(Debug, Clone, PartialEq)]
 struct DerivedSettings {
-    needle_distance_z: f64,
     needle_distance_x_diag: f64,
     inner_needle_x: f64,
     inner_holder_xmax: f64,
     outer_holder_xmax: f64,
     outer_holder_xmin: f64,
+    outer_holder_zmax: f64,
+    outer_holder_zmin: f64,
     needle_width: f64,
     needle_halfwidth: f64,
 }
@@ -63,15 +70,24 @@ impl FromStr for Settings {
             match key {
                 "first_needle_x" => settings.first_needle_x = value.parse().map_err(|e| format!("{}", e))?,
                 "needle_distance" => settings.needle_distance = value.parse().map_err(|e| format!("{}", e))?,
+                "needle_distance_z" => settings.needle_distance_z = value.parse().map_err(|e| format!("{}", e))?,
                 "needle_count" => settings.needle_count = value.parse().map_err(|e| format!("{}", e))?,
+                "needle_count_z" => settings.needle_count_z = value.parse().map_err(|e| format!("{}", e))?,
                 "needletop_slope" => settings.needletop_slope = value.parse().map_err(|e| format!("{}", e))?,
                 "needletop_width" => settings.needletop_width = value.parse().map_err(|e| format!("{}", e))?,
+                "outer_needletop_width" => settings.outer_needletop_width = value.parse().map_err(|e| format!("{}", e))?,
+                "outer_holder_height" => settings.outer_holder_height = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_slope" => settings.hill_slope = value.parse().map_err(|e| format!("{}", e))?,
+                "hill_slope_z" => settings.hill_slope_z = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_xshift" => settings.hill_xshift = value.parse().map_err(|e| format!("{}", e))?,
+                "hill_zshift_outer" => settings.hill_zshift_outer = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_height" => settings.hill_height = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_middle_pos" => settings.hill_middle_pos = value.parse().map_err(|e| format!("{}", e))?,
                 "thickness" => settings.thickness = value.parse().map_err(|e| format!("{}", e))?,
+                "outer_thickness" => settings.outer_thickness = value.parse().map_err(|e| format!("{}", e))?,
                 "steel_thickness" => settings.steel_thickness = value.parse().map_err(|e| format!("{}", e))?,
+                "holder_gap" => settings.holder_gap = value.parse().map_err(|e| format!("{}", e))?,
+
                 "needle_ys" => settings.needle_ys = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
                 "needle_xs1" => settings.needle_xs1 = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
                 "needle_xs2" => settings.needle_xs2 = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
@@ -90,18 +106,24 @@ impl Default for GivenSettings {
         Self {
             first_needle_x: 153.0,
             needle_distance: 50.0,
+            needle_distance_z: 40.0,
             needle_count: 4,
+            needle_count_z: 4,
             needletop_slope: 0.35,
             needletop_width: 12.0,
             outer_needletop_width: 16.0,
+            outer_holder_height: 50.0,
             hill_slope: -0.35,
-            hill_slope_z: -0.40,
-            hill_xshift: 10.0,
+            hill_slope_z: 0.40,
+            hill_xshift: 8.0,
+            hill_zshift_outer: 30.0,
             hill_height: 12.0,
             hill_middle_pos: 0.6,
-            thickness: 12.0,
+            thickness: 20.0,
+            outer_thickness: 20.0,
             steel_thickness: 1.5,
-            penetration_angle: 0.4,
+            penetration_angle: 0.3,
+            holder_gap: 2.0,
 
             needle_ys: vec![
                 183.0 / 215.0 * 10.0,
@@ -135,12 +157,12 @@ impl Default for GivenSettings {
 
 impl DerivedSettings {
     fn new(given: &GivenSettings) -> Self {
-        let needle_distance_x_diag = given.needle_distance * (PI as f64 / 3.0).cos();
+        let needle_distance_x_diag = given.needle_distance / 2.0;
         let needle_width = *given.needle_xs2.last().unwrap();
         let needle_halfwidth = needle_width / 2.0;
         let outer_holder_xmin = - needle_distance_x_diag - needle_halfwidth;
+        let outer_holder_zmin = - given.needle_distance_z - given.hill_zshift_outer;
         Self {
-            needle_distance_z: given.needle_distance * (PI as f64 / 3.0).sin(),
             needle_distance_x_diag,
             inner_needle_x: given.first_needle_x + needle_distance_x_diag,
             inner_holder_xmax:
@@ -152,6 +174,11 @@ impl DerivedSettings {
                 outer_holder_xmin
                     + given.needle_distance * (given.needle_count - 1) as f64
                     + needle_width,
+            outer_holder_zmin,
+            outer_holder_zmax:
+                - given.needle_distance_z
+                    + given.needle_distance_z * 2.0 * (given.needle_count_z - 1) as f64
+                    + given.hill_zshift_outer,
         }
     }
 }
@@ -160,7 +187,7 @@ impl Default for Settings {
     fn default() -> Self {
         let given = GivenSettings::default();
         Self {
-            derived: DerivedSettings::new(&GivenSettings::default()),
+            derived: DerivedSettings::new(&given),
             given,
         }
     }
@@ -196,13 +223,42 @@ macro_rules! create_computation {
     };
 }
 
+fn xcos_outer(cfg: &Settings, x: f64) -> f64 {
+    let x = x + cfg.derived.needle_distance_x_diag;
+    -(x * 2.0 * std::f64::consts::PI / cfg.given.needle_distance).cos()
+}
+
+fn needletop_outer(cfg: &Settings, xcos: f64) -> f64 {
+    cfg.given.hill_height
+        * (xcos - cfg.given.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
+        + cfg.given.outer_needletop_width
+}
+
 create_computation! {
     Settings,
 
     xcos: f64 => |slf: &Computation|
         -(slf.x * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance).cos(),
     zcos: f64 => |slf: &Computation|
-        -(slf.z * 2.0 * std::f64::consts::PI / slf.cfg.derived.needle_distance_z).cos(),
+        -(slf.z * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance_z / 2.0).cos(),
+
+    xcos_outer: f64 => |slf: &Computation| { xcos_outer(slf.cfg, slf.x) },
+
+    zcos_outer: f64 => |slf: &Computation| {
+        let z = slf.z + slf.cfg.given.needle_distance_z;
+        -(z * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance_z / 2.0).cos()
+    },
+
+    xcos_connect: f64 => |slf: &Computation| {
+        let a = slf.cfg.given.penetration_angle;
+        xcos_outer(slf.cfg, (slf.x + slf.cfg.given.first_needle_x) * (-a).cos() - slf.y * (-a).sin())
+    },
+
+    needletop_connect: f64 => |slf: &Computation| {
+        let a = slf.cfg.given.penetration_angle;
+        needletop_outer(slf.cfg, slf.xcos_connect())
+            - (slf.x + slf.cfg.given.first_needle_x) * (-a).sin() - slf.y * (-a).cos()
+    },
 
     needletop: f64 => |slf: &Computation| {
         let xcos = slf.xcos();
@@ -217,20 +273,22 @@ create_computation! {
         slf.cfg.given.hill_height * (base + 1.0) / 2.0
     },
 
-    holderbottom: f64 => |slf: &Computation| {
+    holderbottom_inner: f64 => |slf: &Computation| {
         let zcos = slf.zcos();
         let base = zcos - slf.cfg.given.hill_slope_z * (zcos * zcos - 1.0);
         let height = slf.cfg.given.hill_height - slf.needlebottom();
         (height * base + 2.0 * slf.cfg.given.hill_height - height) / 2.0
     },
 
-    inner_needle_handle: f64 => |slf: &Computation| {
-        (slf.needlebottom() - 0.1 - slf.y).max(slf.y - slf.needletop())
+    holderbottom_outer: f64 => |slf: &Computation| {
+        let zcos = slf.zcos_outer();
+        let base = zcos - slf.cfg.given.hill_slope_z * (zcos * zcos - 1.0);
+        let height = slf.cfg.given.hill_height - slf.needlebottom_outer();
+        (height * base + 2.0 * slf.cfg.given.hill_height - height) / 2.0
     },
 
-    xcos_outer: f64 => |slf: &Computation| {
-        let x = slf.x + slf.cfg.derived.needle_distance_x_diag;
-        -(x * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance).cos()
+    inner_needle_handle: f64 => |slf: &Computation| {
+        (slf.needlebottom() - 0.1 - slf.y).max(slf.y - slf.needletop())
     },
 
     needlebottom_outer: f64 => |slf: &Computation| {
@@ -239,25 +297,60 @@ create_computation! {
             * (xcos - slf.cfg.given.hill_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
     },
 
-    needletop_outer: f64 => |slf: &Computation| {
-        let xcos = slf.xcos_outer();
-        slf.cfg.given.hill_height
-            * (xcos - slf.cfg.given.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
-            + slf.cfg.given.outer_needletop_width
-    },
+    needletop_outer: f64 => |slf: &Computation| { needletop_outer(slf.cfg, slf.xcos_outer()) },
 
     outer_needle_handle: f64 => |slf: &Computation| {
         (slf.needlebottom_outer() - 0.1 - slf.y).max(slf.y - slf.needletop_outer())
+            .max(
+                (slf.y - slf.cfg.given.outer_needletop_width)
+                    .min(
+                        (-slf.x - slf.cfg.derived.needle_distance_x_diag)
+                            .max(
+                                slf.x - slf.cfg.derived.outer_holder_xmax
+                                    + slf.cfg.derived.needle_halfwidth
+                            )
+                    )
+            )
     }
 }
 
 fn inner_holder(comp: &Computation) -> f64 {
-    (comp.holderbottom() - comp.y)
-    .max(comp.y - comp.cfg.given.hill_height - comp.cfg.given.needletop_width)
+    (comp.holderbottom_inner() - comp.y)
     .max(-comp.cfg.given.thickness - comp.z)
     .max(comp.z - comp.cfg.given.thickness)
     .max(-comp.x - comp.cfg.given.hill_xshift)
     .max(comp.x - comp.cfg.derived.inner_holder_xmax)
+}
+
+fn outer_holder(comp: &Computation) -> f64 {
+    let outer_r =
+        comp.cfg.given.first_needle_x - comp.cfg.given.hill_xshift - comp.cfg.given.holder_gap;
+    let outer_circle =
+        ((comp.x + comp.cfg.given.first_needle_x).powi(2) + comp.y.powi(2)).sqrt() - outer_r;
+
+    let mut outer_circle_z = INFINITY;
+    for i in 0..comp.cfg.given.needle_count_z - 1 {
+        let zp = comp.cfg.given.needle_distance_z * i as f64 * 2.0;
+        outer_circle_z = outer_circle_z
+            .min(
+                (-comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap + zp)
+                .max(comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap - zp)
+                );
+    }
+
+    (comp.holderbottom_outer() - comp.y)
+    .max(-comp.z + comp.cfg.derived.outer_holder_zmin)
+    .max(comp.z - comp.cfg.derived.outer_holder_zmax)
+    .max(
+        (comp.cfg.derived.outer_holder_xmin - comp.x)
+        .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
+        .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
+        .max(outer_circle.min(-outer_circle_z))
+        .min(
+            (comp.x - comp.cfg.derived.outer_holder_xmax)
+            .max(comp.cfg.derived.outer_holder_xmax - comp.cfg.given.outer_thickness - comp.x)
+        )
+    )
 }
 
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
@@ -269,14 +362,14 @@ impl SDFSurface for InnerHolder {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
-                -self.cfg.given.hill_xshift as f32,
+                self.cfg.derived.outer_holder_xmin as f32,
                 0.0,
-                -self.cfg.given.thickness as f32,
+                self.cfg.derived.outer_holder_zmin as f32,
             ),
             Vector3::new(
-                self.cfg.derived.inner_holder_xmax as f32,
-                (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
-                self.cfg.given.thickness as f32,
+                self.cfg.derived.outer_holder_xmax as f32,
+                130.0,
+                self.cfg.derived.outer_holder_zmax as f32,
             ),
         ]
     }
@@ -287,13 +380,42 @@ impl SDFSurface for InnerHolder {
         let z = p.z as f64;
         let comp = Computation::new(&self.cfg, x, y, z);
 
+        let mut outer_needle_z = INFINITY;
+        for i in 0..self.cfg.given.needle_count_z {
+            let zp = self.cfg.given.needle_distance_z * i as f64 * 2.0;
+            outer_needle_z = outer_needle_z
+                .min(
+                    (-z - self.cfg.given.steel_thickness - self.cfg.given.needle_distance_z + zp)
+                    .max(z - self.cfg.given.steel_thickness + self.cfg.given.needle_distance_z - zp)
+                    );
+        }
+
+        let inner_r =
+            self.cfg.given.first_needle_x + self.cfg.derived.outer_holder_xmax
+            - self.cfg.given.outer_thickness - self.cfg.given.holder_gap;
+        let inner_circle =
+            ((x + self.cfg.given.first_needle_x).powi(2) + y*y).sqrt() - inner_r;
+
         let inner_holder = 
             inner_holder(&comp)
                 .max(
                     -comp.inner_needle_handle()
                         .max(-self.cfg.given.steel_thickness - z)
                         .max(z - self.cfg.given.steel_thickness),
-                ) as f32;
+                )
+                .min(
+                    comp.needletop_connect()
+                        .max(-self.cfg.given.hill_xshift - x)
+                        .max(self.cfg.given.thickness - z)
+                        .max(z - self.cfg.given.needle_distance_z*2.0 + self.cfg.given.thickness)
+                )
+                .max(inner_circle)
+                .min(
+                    outer_holder(&comp)
+                        .max(-comp.outer_needle_handle().max(outer_needle_z))
+                        .max(y - self.cfg.given.outer_holder_height)
+                )
+                as f32;
 
         SDFSample::new(
             inner_holder,
@@ -327,7 +449,7 @@ fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
             cfg.given.needle_ys[i] - cfg.given.needle_ys[i-1],
         ));
     }
-    d.max(cfg.given.needle_cut_r.powi(2) - x*x - (y + cfg.given.needle_cut_y).powi(2))
+    d.max(cfg.given.needle_cut_r - (x*x - (y + cfg.given.needle_cut_y).powi(2)).sqrt())
 }
 
 fn inner_needles_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
@@ -370,20 +492,9 @@ fn outer_needle(comp: &Computation) -> f64 {
             comp.outer_needle_handle()
                 .max(-comp.x + comp.cfg.derived.outer_holder_xmin)
                 .max(comp.x - comp.cfg.derived.outer_holder_xmax)
-                .max(
-                    (comp.y - comp.cfg.given.outer_needletop_width)
-                        .min(
-                            (-comp.x - comp.cfg.derived.needle_distance_x_diag)
-                                .max(
-                                    comp.x - comp.cfg.derived.outer_holder_xmax
-                                        + comp.cfg.derived.needle_halfwidth
-                                )
-                        )
-                )
         )
-        // .max(comp.x - comp.cfg.derived.inner_holder_xmax)
-        .max(-comp.cfg.given.steel_thickness - comp.cfg.derived.needle_distance_z - comp.z)
-        .max(comp.z - comp.cfg.given.steel_thickness + comp.cfg.derived.needle_distance_z)
+        .max(-comp.cfg.given.steel_thickness - comp.cfg.given.needle_distance_z - comp.z)
+        .max(comp.z - comp.cfg.given.steel_thickness + comp.cfg.given.needle_distance_z)
 }
 
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
@@ -397,7 +508,7 @@ impl SDFSurface for InnerNeedle {
             Vector3::new(
                 -30.0 - self.cfg.derived.needle_distance_x_diag as f32,
                 -120.0,
-                (-self.cfg.given.steel_thickness - self.cfg.derived.needle_distance_z) as f32,
+                (-self.cfg.given.steel_thickness - self.cfg.given.needle_distance_z) as f32,
             ),
             Vector3::new(
                 self.cfg.derived.outer_holder_xmax as f32 + 10.0,
