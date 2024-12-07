@@ -21,6 +21,7 @@ struct GivenSettings {
     needle_count: usize,
     needletop_slope: f64,
     needletop_width: f64,
+    outer_needletop_width: f64,
     hill_slope: f64,
     hill_xshift: f64,
     hill_height: f64,
@@ -100,6 +101,7 @@ impl Default for GivenSettings {
             needle_count: 4,
             needletop_slope: 0.35,
             needletop_width: 12.0,
+            outer_needletop_width: 16.0,
             hill_slope: -0.35,
             hill_xshift: 10.0,
             hill_height: 12.0,
@@ -243,7 +245,7 @@ create_computation! {
         let xcos = slf.xcos_outer();
         slf.cfg.given.hill_height
             * (xcos - slf.cfg.given.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
-            + slf.cfg.given.needletop_width
+            + slf.cfg.given.outer_needletop_width
     },
 
     outer_needle_handle: f64 => |slf: &Computation| {
@@ -397,7 +399,7 @@ fn outer_needle(comp: &Computation) -> f64 {
                 .max(-comp.x + comp.cfg.derived.outer_holder_xmin)
                 .max(comp.x - comp.cfg.derived.outer_holder_xmax)
                 .max(
-                    (comp.y - comp.cfg.given.needletop_width)
+                    (comp.y - comp.cfg.given.outer_needletop_width)
                         .min(
                             (-comp.x - comp.cfg.derived.needle_distance_x_diag)
                                 .max(
@@ -427,7 +429,7 @@ impl SDFSurface for InnerNeedle {
             ),
             Vector3::new(
                 self.cfg.derived.outer_holder_xmax as f32 + 10.0,
-                (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
+                (self.cfg.given.hill_height + self.cfg.given.outer_needletop_width) as f32,
                 self.cfg.given.steel_thickness as f32,
             ),
         ]
