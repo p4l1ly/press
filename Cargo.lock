@@ -717,6 +717,7 @@ version = "0.1.0"
 dependencies = [
  "cgmath",
  "clap",
+ "once_cell",
  "sdf-viewer",
  "wasm-bindgen",
 ]
