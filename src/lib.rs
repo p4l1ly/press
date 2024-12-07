@@ -14,8 +14,8 @@ pub extern "C" fn init() {
     set_root_sdf(Box::new(InnerHolder { cfg: Settings::default() }));
 }
 
-#[derive(clap::Parser, Debug, Clone, PartialEq)]
-struct Settings {
+#[derive(Debug, Clone, PartialEq)]
+struct GivenSettings {
     first_needle_x: f64,
     needle_distance: f64,
     needle_count: usize,
@@ -33,17 +33,26 @@ struct Settings {
     needle_ys: Vec<f64>,
     needle_xs1: Vec<f64>,
     needle_xs2: Vec<f64>,
+}
 
+#[derive(Debug, Clone, PartialEq)]
+struct DerivedSettings {
     needle_distance_z: f64,
     needle_distance_x_diag: f64,
     inner_needle_x: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Settings {
+    given: GivenSettings,
+    derived: DerivedSettings,
 }
 
 impl FromStr for Settings {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut settings = Settings::default();
+        let mut settings = GivenSettings::default();
         for line in s.lines() {
             let mut parts = line.splitn(2, '=');
             let key = parts.next().unwrap();
@@ -67,88 +76,77 @@ impl FromStr for Settings {
                 "needle_xs2" => settings.needle_xs2 = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
                 _ => return Err(format!("Unknown key {}", key)),
             }
-            settings.postprocess();
         }
-        Ok(settings)
+        Ok(Settings {
+            derived: DerivedSettings::new(&settings),
+            given: settings,
+        })
+    }
+}
+
+impl Default for GivenSettings {
+    fn default() -> Self {
+        Self {
+            first_needle_x: 3.0, // 153.0;
+            needle_distance: 50.0,
+            needle_count: 4,
+            needletop_slope: 0.35,
+            needletop_width: 8.0,
+            hill_slope: -0.35,
+            hill_xshift: 10.0,
+            hill_height: 12.0,
+            hill_height_edge: 2.0,
+            hill_height_middle: 12.0,
+            hill_middle_pos: 0.6,
+            thickness: 12.0,
+            steel_thickness: 1.5,
+
+            needle_ys: vec![
+                183.0 / 215.0 * 10.0,
+                183.0 / 215.0 * 16.5,
+                183.0 / 215.0 * 22.0,
+                183.0 / 215.0 * 31.0,
+                183.0 / 215.0 * 36.5,
+                183.0 / 215.0 * 200.0,
+            ],
+            needle_xs1: vec![
+                183.0 / 215.0 * 2.0,
+                183.0 / 215.0 * 6.0,
+                183.0 / 215.0 * 9.0,
+                183.0 / 215.0 * 11.0,
+                183.0 / 215.0 * 13.0,
+                183.0 / 215.0 * 14.5,
+            ],
+            needle_xs2: vec![
+                183.0 / 215.0 * 4.5,
+                183.0 / 215.0 * 7.5,
+                183.0 / 215.0 * 9.5,
+                183.0 / 215.0 * 11.5,
+                183.0 / 215.0 * 13.0,
+                183.0 / 215.0 * 14.5,
+            ],
+        }
+    }
+}
+
+impl DerivedSettings {
+    fn new(given: &GivenSettings) -> Self {
+        let needle_distance_x_diag = given.needle_distance * (PI as f64 / 3.0).cos();
+        Self {
+            needle_distance_z: given.needle_distance * (PI as f64 / 3.0).sin(),
+            needle_distance_x_diag,
+            inner_needle_x: given.first_needle_x + needle_distance_x_diag,
+        }
     }
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        let first_needle_x = 3.0; // 153.0;
-        let needle_distance = 50.0;
-        let needle_count = 4;
-        let needletop_slope = 0.35;
-        let needletop_width = 8.0;
-        let hill_slope = -0.35;
-        let hill_xshift = 10.0;
-        let hill_height = 12.0;
-        let hill_height_edge = 2.0;
-        let hill_height_middle = 12.0;
-        let hill_middle_pos = 0.6;
-        let thickness = 12.0;
-        let steel_thickness = 1.5;
-
-        let needle_ys = vec![
-            183.0 / 215.0 * 10.0,
-            183.0 / 215.0 * 16.5,
-            183.0 / 215.0 * 22.0,
-            183.0 / 215.0 * 31.0,
-            183.0 / 215.0 * 36.5,
-            183.0 / 215.0 * 200.0,
-        ];
-        let needle_xs1 = vec![
-            183.0 / 215.0 * 2.0,
-            183.0 / 215.0 * 6.0,
-            183.0 / 215.0 * 9.0,
-            183.0 / 215.0 * 11.0,
-            183.0 / 215.0 * 13.0,
-            183.0 / 215.0 * 14.5,
-        ];
-        let needle_xs2 = vec![
-            183.0 / 215.0 * 4.5,
-            183.0 / 215.0 * 7.5,
-            183.0 / 215.0 * 9.5,
-            183.0 / 215.0 * 11.5,
-            183.0 / 215.0 * 13.0,
-            183.0 / 215.0 * 14.5,
-        ];
-
-        let mut result = Self {
-            first_needle_x,
-            needle_distance,
-            needle_count,
-            needletop_slope,
-            needletop_width,
-            hill_slope,
-            hill_xshift,
-            hill_height,
-            hill_height_edge,
-            hill_height_middle,
-            hill_middle_pos,
-            thickness,
-            steel_thickness,
-
-            needle_ys,
-            needle_xs1,
-            needle_xs2,
-
-            needle_distance_z: 0.0,
-            needle_distance_x_diag: 0.0,
-            inner_needle_x: 0.0,
-        };
-
-        result.postprocess();
-
-        result
-    }
-}
-
-impl Settings {
-    fn postprocess(&mut self) {
-        self.needle_distance_z = self.needle_distance * (PI as f64 / 3.0).sin();
-        self.needle_distance_x_diag = self.needle_distance * (PI as f64 / 3.0).cos();
-        self.inner_needle_x = self.first_needle_x + self.needle_distance_x_diag;
+        let given = GivenSettings::default();
+        Self {
+            derived: DerivedSettings::new(&GivenSettings::default()),
+            given,
+        }
     }
 }
 
@@ -184,22 +182,58 @@ macro_rules! create_computation {
 
 create_computation! {
     Settings,
+
     xcos: f64 => |slf: &Computation|
-        -(slf.x * 2.0 * std::f64::consts::PI / slf.cfg.needle_distance).cos(),
+        -(slf.x * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance).cos(),
+
     holder_wave: f64 => |slf: &Computation| {
         let xcos = slf.xcos();
-        xcos - slf.cfg.hill_slope * (xcos * xcos - 1.0)
+        xcos - slf.cfg.given.hill_slope * (xcos * xcos - 1.0)
     },
+
     needletop: f64 => |slf: &Computation| {
         let xcos = slf.xcos();
-        slf.cfg.hill_height
-            * (xcos - slf.cfg.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
-            + slf.cfg.needletop_width
+        slf.cfg.given.hill_height
+            * (xcos - slf.cfg.given.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
+            + slf.cfg.given.needletop_width
     },
+
     peak_holder_wave: f64 => |slf: &Computation|
-        slf.cfg.hill_height * (slf.holder_wave() + 1.0) / 2.0,
+        slf.cfg.given.hill_height * (slf.holder_wave() + 1.0) / 2.0,
+
     needle_handle: f64 => |slf: &Computation| {
         (slf.peak_holder_wave() - 0.1 - slf.y).max(slf.y - slf.needletop())
+    },
+
+    inner_holder: f64 => |slf: &Computation| {
+        if -slf.cfg.given.steel_thickness < slf.z && slf.z < slf.cfg.given.steel_thickness {
+            (slf.peak_holder_wave() - slf.y)
+                .max(slf.y - slf.cfg.given.hill_height - slf.cfg.given.needletop_width)
+        } else {
+            let middle = (
+                slf.cfg.given.hill_height_middle * slf.holder_wave()
+                + 2.0 * slf.cfg.given.hill_height - slf.cfg.given.hill_height_middle
+            ) / 2.0;
+            let edge = (
+                slf.cfg.given.hill_height_edge * slf.holder_wave()
+                + 2.0 * slf.cfg.given.hill_height - slf.cfg.given.hill_height_edge
+            ) / 2.0;
+            let control_points = [
+                Point { x: -0.1, y: slf.peak_holder_wave() },
+                Point { x: slf.cfg.given.thickness * slf.cfg.given.hill_middle_pos, y: middle },
+                Point { x: slf.cfg.given.thickness, y: edge },
+            ];
+            let mut poly = bezier_curve_points(&control_points, 8);
+            poly.push(Point {
+                x: slf.cfg.given.thickness,
+                y: slf.cfg.given.hill_height + slf.cfg.given.needletop_width
+            });
+            poly.push(Point { x: 0.0, y: slf.cfg.given.hill_height + slf.cfg.given.needletop_width });
+            sdf_polygon(
+                &Point { x: slf.z.abs() - slf.cfg.given.steel_thickness, y: slf.y },
+                &poly
+            )
+        }
     }
 }
 
@@ -212,18 +246,18 @@ impl SDFSurface for InnerHolder {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
-                -self.cfg.hill_xshift as f32,
+                -self.cfg.given.hill_xshift as f32,
                 0.0,
-                (self.cfg.steel_thickness - self.cfg.thickness)
+                (self.cfg.given.steel_thickness - self.cfg.given.thickness)
                     as f32,
             ),
             Vector3::new(
                 (
-                    self.cfg.needle_distance * (self.cfg.needle_count - 2) as f64
-                    + self.cfg.hill_xshift
+                    self.cfg.given.needle_distance * (self.cfg.given.needle_count - 2) as f64
+                    + self.cfg.given.hill_xshift
                 ) as f32,
-                (self.cfg.hill_height + self.cfg.needletop_width) as f32,
-                (self.cfg.steel_thickness + self.cfg.thickness)
+                (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
+                (self.cfg.given.steel_thickness + self.cfg.given.thickness)
                     as f32,
             ),
         ]
@@ -235,44 +269,14 @@ impl SDFSurface for InnerHolder {
         let z = p.z as f64;
         let comp = Computation::new(&self.cfg, x, y, z);
 
-        let inner_holder =
-            if -self.cfg.steel_thickness < z && z < self.cfg.steel_thickness {
-                (comp.peak_holder_wave() - y)
-                    .max(y - self.cfg.hill_height - self.cfg.needletop_width)
-            } else {
-                let middle = (
-                    self.cfg.hill_height_middle * comp.holder_wave()
-                    + 2.0 * self.cfg.hill_height - self.cfg.hill_height_middle
-                ) / 2.0;
-                let edge = (
-                    self.cfg.hill_height_edge * comp.holder_wave()
-                    + 2.0 * self.cfg.hill_height - self.cfg.hill_height_edge
-                ) / 2.0;
-                let control_points = [
-                    Point { x: -0.1, y: comp.peak_holder_wave() },
-                    Point { x: self.cfg.thickness * self.cfg.hill_middle_pos, y: middle },
-                    Point { x: self.cfg.thickness, y: edge },
-                ];
-                let mut poly = bezier_curve_points(&control_points, 8);
-                poly.push(Point {
-                    x: self.cfg.thickness,
-                    y: self.cfg.hill_height + self.cfg.needletop_width
-                });
-                poly.push(Point { x: 0.0, y: self.cfg.hill_height + self.cfg.needletop_width });
-                sdf_polygon(
-                    &Point { x: z.abs() - self.cfg.steel_thickness, y },
-                    &poly
-                )
-            };
-
         SDFSample::new(
-            inner_holder
-                .max(-self.cfg.steel_thickness - self.cfg.thickness - z)
-                .max(z - self.cfg.steel_thickness - self.cfg.thickness)
+            comp.inner_holder()
+                .max(-self.cfg.given.steel_thickness - self.cfg.given.thickness - z)
+                .max(z - self.cfg.given.steel_thickness - self.cfg.given.thickness)
                 .max(
                     -comp.needle_handle()
-                        .max(-self.cfg.steel_thickness - z)
-                        .max(z - self.cfg.steel_thickness),
+                        .max(-self.cfg.given.steel_thickness - z)
+                        .max(z - self.cfg.given.steel_thickness),
                 ) as f32,
             Vector3::new(1.0, 1.0, 0.0),
         )
@@ -299,13 +303,13 @@ pub struct InnerNeedle {
 
 impl InnerNeedle {
     fn needle_straight(&self, x: f64, y: f64) -> f64 {
-        let mut d = trapezoid(x, y, self.cfg.needle_xs1[0], self.cfg.needle_xs2[0], self.cfg.needle_ys[0]);
-        for i in 1..self.cfg.needle_ys.len() {
-            let x1 = if i & 1 == 0 { x + (self.cfg.needle_xs1[i] - self.cfg.needle_xs2[i-1])/2.0 } else { x };
+        let mut d = trapezoid(x, y, self.cfg.given.needle_xs1[0], self.cfg.given.needle_xs2[0], self.cfg.given.needle_ys[0]);
+        for i in 1..self.cfg.given.needle_ys.len() {
+            let x1 = if i & 1 == 0 { x + (self.cfg.given.needle_xs1[i] - self.cfg.given.needle_xs2[i-1])/2.0 } else { x };
             d = d.min(trapezoid(
-                x1, y - self.cfg.needle_ys[i-1],
-                self.cfg.needle_xs1[i], self.cfg.needle_xs2[i],
-                self.cfg.needle_ys[i] - self.cfg.needle_ys[i-1],
+                x1, y - self.cfg.given.needle_ys[i-1],
+                self.cfg.given.needle_xs1[i], self.cfg.given.needle_xs2[i],
+                self.cfg.given.needle_ys[i] - self.cfg.given.needle_ys[i-1],
             ));
         }
         d
@@ -315,8 +319,8 @@ impl InnerNeedle {
 impl SDFSurface for InnerNeedle {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
-            Vector3::new(-14.5, -10.0, -self.cfg.steel_thickness as f32),
-            Vector3::new(14.5, 200.0, self.cfg.steel_thickness as f32),
+            Vector3::new(-14.5, -10.0, -self.cfg.given.steel_thickness as f32),
+            Vector3::new(14.5, 200.0, self.cfg.given.steel_thickness as f32),
         ]
     }
 
