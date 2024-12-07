@@ -1,17 +1,12 @@
 use std::{f32::consts::PI, str::FromStr};
 
-use bezier::bezier_curve_points;
 use cgmath::Vector3;
-use polygon::{sdf_polygon, Point};
 use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
 use clap;
 
-mod polygon;
-mod bezier;
-
 #[no_mangle]
 pub extern "C" fn init() {
-    set_root_sdf(Box::new(InnerNeedle { cfg: Settings::default() }));
+    set_root_sdf(Box::new(InnerHolder { cfg: Settings::default() }));
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,10 +18,9 @@ struct GivenSettings {
     needletop_width: f64,
     outer_needletop_width: f64,
     hill_slope: f64,
+    hill_slope_z: f64,
     hill_xshift: f64,
     hill_height: f64,
-    hill_height_edge: f64,
-    hill_height_middle: f64,
     hill_middle_pos: f64,
     thickness: f64,
     steel_thickness: f64,
@@ -75,8 +69,6 @@ impl FromStr for Settings {
                 "hill_slope" => settings.hill_slope = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_xshift" => settings.hill_xshift = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_height" => settings.hill_height = value.parse().map_err(|e| format!("{}", e))?,
-                "hill_height_edge" => settings.hill_height_edge = value.parse().map_err(|e| format!("{}", e))?,
-                "hill_height_middle" => settings.hill_height_middle = value.parse().map_err(|e| format!("{}", e))?,
                 "hill_middle_pos" => settings.hill_middle_pos = value.parse().map_err(|e| format!("{}", e))?,
                 "thickness" => settings.thickness = value.parse().map_err(|e| format!("{}", e))?,
                 "steel_thickness" => settings.steel_thickness = value.parse().map_err(|e| format!("{}", e))?,
@@ -103,10 +95,9 @@ impl Default for GivenSettings {
             needletop_width: 12.0,
             outer_needletop_width: 16.0,
             hill_slope: -0.35,
+            hill_slope_z: -0.40,
             hill_xshift: 10.0,
             hill_height: 12.0,
-            hill_height_edge: 2.0,
-            hill_height_middle: 12.0,
             hill_middle_pos: 0.6,
             thickness: 12.0,
             steel_thickness: 1.5,
@@ -210,11 +201,8 @@ create_computation! {
 
     xcos: f64 => |slf: &Computation|
         -(slf.x * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance).cos(),
-
-    holder_wave: f64 => |slf: &Computation| {
-        let xcos = slf.xcos();
-        xcos - slf.cfg.given.hill_slope * (xcos * xcos - 1.0)
-    },
+    zcos: f64 => |slf: &Computation|
+        -(slf.z * 2.0 * std::f64::consts::PI / slf.cfg.derived.needle_distance_z).cos(),
 
     needletop: f64 => |slf: &Computation| {
         let xcos = slf.xcos();
@@ -223,11 +211,21 @@ create_computation! {
             + slf.cfg.given.needletop_width
     },
 
-    peak_holder_wave: f64 => |slf: &Computation|
-        slf.cfg.given.hill_height * (slf.holder_wave() + 1.0) / 2.0,
+    needlebottom: f64 => |slf: &Computation| {
+        let xcos = slf.xcos();
+        let base = xcos - slf.cfg.given.hill_slope * (xcos * xcos - 1.0);
+        slf.cfg.given.hill_height * (base + 1.0) / 2.0
+    },
+
+    holderbottom: f64 => |slf: &Computation| {
+        let zcos = slf.zcos();
+        let base = zcos - slf.cfg.given.hill_slope_z * (zcos * zcos - 1.0);
+        let height = slf.cfg.given.hill_height - slf.needlebottom();
+        (height * base + 2.0 * slf.cfg.given.hill_height - height) / 2.0
+    },
 
     inner_needle_handle: f64 => |slf: &Computation| {
-        (slf.peak_holder_wave() - 0.1 - slf.y).max(slf.y - slf.needletop())
+        (slf.needlebottom() - 0.1 - slf.y).max(slf.y - slf.needletop())
     },
 
     xcos_outer: f64 => |slf: &Computation| {
@@ -254,36 +252,10 @@ create_computation! {
 }
 
 fn inner_holder(comp: &Computation) -> f64 {
-    if -comp.cfg.given.steel_thickness < comp.z && comp.z < comp.cfg.given.steel_thickness {
-        (comp.peak_holder_wave() - comp.y)
-            .max(comp.y - comp.cfg.given.hill_height - comp.cfg.given.needletop_width)
-    } else {
-        let middle = (
-            comp.cfg.given.hill_height_middle * comp.holder_wave()
-            + 2.0 * comp.cfg.given.hill_height - comp.cfg.given.hill_height_middle
-        ) / 2.0;
-        let edge = (
-            comp.cfg.given.hill_height_edge * comp.holder_wave()
-            + 2.0 * comp.cfg.given.hill_height - comp.cfg.given.hill_height_edge
-        ) / 2.0;
-        let control_points = [
-            Point { x: -0.1, y: comp.peak_holder_wave() },
-            Point { x: comp.cfg.given.thickness * comp.cfg.given.hill_middle_pos, y: middle },
-            Point { x: comp.cfg.given.thickness, y: edge },
-        ];
-        let mut poly = bezier_curve_points(&control_points, 8);
-        poly.push(Point {
-            x: comp.cfg.given.thickness,
-            y: comp.cfg.given.hill_height + comp.cfg.given.needletop_width
-        });
-        poly.push(Point { x: 0.0, y: comp.cfg.given.hill_height + comp.cfg.given.needletop_width });
-        sdf_polygon(
-            &Point { x: comp.z.abs() - comp.cfg.given.steel_thickness, y: comp.y },
-            &poly
-        )
-    }
-    .max(-comp.cfg.given.steel_thickness - comp.cfg.given.thickness - comp.z)
-    .max(comp.z - comp.cfg.given.steel_thickness - comp.cfg.given.thickness)
+    (comp.holderbottom() - comp.y)
+    .max(comp.y - comp.cfg.given.hill_height - comp.cfg.given.needletop_width)
+    .max(-comp.cfg.given.thickness - comp.z)
+    .max(comp.z - comp.cfg.given.thickness)
     .max(-comp.x - comp.cfg.given.hill_xshift)
     .max(comp.x - comp.cfg.derived.inner_holder_xmax)
 }
@@ -299,12 +271,12 @@ impl SDFSurface for InnerHolder {
             Vector3::new(
                 -self.cfg.given.hill_xshift as f32,
                 0.0,
-                (self.cfg.given.steel_thickness - self.cfg.given.thickness) as f32,
+                -self.cfg.given.thickness as f32,
             ),
             Vector3::new(
                 self.cfg.derived.inner_holder_xmax as f32,
                 (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
-                (self.cfg.given.steel_thickness + self.cfg.given.thickness) as f32,
+                self.cfg.given.thickness as f32,
             ),
         ]
     }
