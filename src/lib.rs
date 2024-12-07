@@ -11,7 +11,7 @@ mod bezier;
 
 #[no_mangle]
 pub extern "C" fn init() {
-    set_root_sdf(Box::new(InnerHolder { cfg: Settings::default() }));
+    set_root_sdf(Box::new(InnerNeedle { cfg: Settings::default() }));
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,10 +29,13 @@ struct GivenSettings {
     hill_middle_pos: f64,
     thickness: f64,
     steel_thickness: f64,
+    penetration_angle: f64,
 
     needle_ys: Vec<f64>,
     needle_xs1: Vec<f64>,
     needle_xs2: Vec<f64>,
+    needle_cut_y: f64,
+    needle_cut_r: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +43,11 @@ struct DerivedSettings {
     needle_distance_z: f64,
     needle_distance_x_diag: f64,
     inner_needle_x: f64,
+    inner_holder_xmax: f64,
+    outer_holder_xmax: f64,
+    outer_holder_xmin: f64,
+    needle_width: f64,
+    needle_halfwidth: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,11 +95,11 @@ impl FromStr for Settings {
 impl Default for GivenSettings {
     fn default() -> Self {
         Self {
-            first_needle_x: 3.0, // 153.0;
+            first_needle_x: 153.0,
             needle_distance: 50.0,
             needle_count: 4,
             needletop_slope: 0.35,
-            needletop_width: 8.0,
+            needletop_width: 12.0,
             hill_slope: -0.35,
             hill_xshift: 10.0,
             hill_height: 12.0,
@@ -100,6 +108,7 @@ impl Default for GivenSettings {
             hill_middle_pos: 0.6,
             thickness: 12.0,
             steel_thickness: 1.5,
+            penetration_angle: 0.4,
 
             needle_ys: vec![
                 183.0 / 215.0 * 10.0,
@@ -125,6 +134,8 @@ impl Default for GivenSettings {
                 183.0 / 215.0 * 13.0,
                 183.0 / 215.0 * 14.5,
             ],
+            needle_cut_y: 0.6,
+            needle_cut_r: 0.8,
         }
     }
 }
@@ -132,10 +143,22 @@ impl Default for GivenSettings {
 impl DerivedSettings {
     fn new(given: &GivenSettings) -> Self {
         let needle_distance_x_diag = given.needle_distance * (PI as f64 / 3.0).cos();
+        let needle_width = *given.needle_xs2.last().unwrap();
+        let needle_halfwidth = needle_width / 2.0;
+        let outer_holder_xmin = - needle_distance_x_diag - needle_halfwidth;
         Self {
             needle_distance_z: given.needle_distance * (PI as f64 / 3.0).sin(),
             needle_distance_x_diag,
             inner_needle_x: given.first_needle_x + needle_distance_x_diag,
+            inner_holder_xmax:
+                given.needle_distance * (given.needle_count - 2) as f64 + given.hill_xshift,
+            needle_width,
+            needle_halfwidth,
+            outer_holder_xmin,
+            outer_holder_xmax:
+                outer_holder_xmin
+                    + given.needle_distance * (given.needle_count - 1) as f64
+                    + needle_width,
         }
     }
 }
@@ -201,40 +224,66 @@ create_computation! {
     peak_holder_wave: f64 => |slf: &Computation|
         slf.cfg.given.hill_height * (slf.holder_wave() + 1.0) / 2.0,
 
-    needle_handle: f64 => |slf: &Computation| {
+    inner_needle_handle: f64 => |slf: &Computation| {
         (slf.peak_holder_wave() - 0.1 - slf.y).max(slf.y - slf.needletop())
     },
 
-    inner_holder: f64 => |slf: &Computation| {
-        if -slf.cfg.given.steel_thickness < slf.z && slf.z < slf.cfg.given.steel_thickness {
-            (slf.peak_holder_wave() - slf.y)
-                .max(slf.y - slf.cfg.given.hill_height - slf.cfg.given.needletop_width)
-        } else {
-            let middle = (
-                slf.cfg.given.hill_height_middle * slf.holder_wave()
-                + 2.0 * slf.cfg.given.hill_height - slf.cfg.given.hill_height_middle
-            ) / 2.0;
-            let edge = (
-                slf.cfg.given.hill_height_edge * slf.holder_wave()
-                + 2.0 * slf.cfg.given.hill_height - slf.cfg.given.hill_height_edge
-            ) / 2.0;
-            let control_points = [
-                Point { x: -0.1, y: slf.peak_holder_wave() },
-                Point { x: slf.cfg.given.thickness * slf.cfg.given.hill_middle_pos, y: middle },
-                Point { x: slf.cfg.given.thickness, y: edge },
-            ];
-            let mut poly = bezier_curve_points(&control_points, 8);
-            poly.push(Point {
-                x: slf.cfg.given.thickness,
-                y: slf.cfg.given.hill_height + slf.cfg.given.needletop_width
-            });
-            poly.push(Point { x: 0.0, y: slf.cfg.given.hill_height + slf.cfg.given.needletop_width });
-            sdf_polygon(
-                &Point { x: slf.z.abs() - slf.cfg.given.steel_thickness, y: slf.y },
-                &poly
-            )
-        }
+    xcos_outer: f64 => |slf: &Computation| {
+        let x = slf.x + slf.cfg.derived.needle_distance_x_diag;
+        -(x * 2.0 * std::f64::consts::PI / slf.cfg.given.needle_distance).cos()
+    },
+
+    needlebottom_outer: f64 => |slf: &Computation| {
+        let xcos = slf.xcos_outer();
+        slf.cfg.given.hill_height
+            * (xcos - slf.cfg.given.hill_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
+    },
+
+    needletop_outer: f64 => |slf: &Computation| {
+        let xcos = slf.xcos_outer();
+        slf.cfg.given.hill_height
+            * (xcos - slf.cfg.given.needletop_slope * (xcos * xcos - 1.0) + 1.0) / 2.0
+            + slf.cfg.given.needletop_width
+    },
+
+    outer_needle_handle: f64 => |slf: &Computation| {
+        (slf.needlebottom_outer() - 0.1 - slf.y).max(slf.y - slf.needletop_outer())
     }
+}
+
+fn inner_holder(comp: &Computation) -> f64 {
+    if -comp.cfg.given.steel_thickness < comp.z && comp.z < comp.cfg.given.steel_thickness {
+        (comp.peak_holder_wave() - comp.y)
+            .max(comp.y - comp.cfg.given.hill_height - comp.cfg.given.needletop_width)
+    } else {
+        let middle = (
+            comp.cfg.given.hill_height_middle * comp.holder_wave()
+            + 2.0 * comp.cfg.given.hill_height - comp.cfg.given.hill_height_middle
+        ) / 2.0;
+        let edge = (
+            comp.cfg.given.hill_height_edge * comp.holder_wave()
+            + 2.0 * comp.cfg.given.hill_height - comp.cfg.given.hill_height_edge
+        ) / 2.0;
+        let control_points = [
+            Point { x: -0.1, y: comp.peak_holder_wave() },
+            Point { x: comp.cfg.given.thickness * comp.cfg.given.hill_middle_pos, y: middle },
+            Point { x: comp.cfg.given.thickness, y: edge },
+        ];
+        let mut poly = bezier_curve_points(&control_points, 8);
+        poly.push(Point {
+            x: comp.cfg.given.thickness,
+            y: comp.cfg.given.hill_height + comp.cfg.given.needletop_width
+        });
+        poly.push(Point { x: 0.0, y: comp.cfg.given.hill_height + comp.cfg.given.needletop_width });
+        sdf_polygon(
+            &Point { x: comp.z.abs() - comp.cfg.given.steel_thickness, y: comp.y },
+            &poly
+        )
+    }
+    .max(-comp.cfg.given.steel_thickness - comp.cfg.given.thickness - comp.z)
+    .max(comp.z - comp.cfg.given.steel_thickness - comp.cfg.given.thickness)
+    .max(-comp.x - comp.cfg.given.hill_xshift)
+    .max(comp.x - comp.cfg.derived.inner_holder_xmax)
 }
 
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
@@ -248,17 +297,12 @@ impl SDFSurface for InnerHolder {
             Vector3::new(
                 -self.cfg.given.hill_xshift as f32,
                 0.0,
-                (self.cfg.given.steel_thickness - self.cfg.given.thickness)
-                    as f32,
+                (self.cfg.given.steel_thickness - self.cfg.given.thickness) as f32,
             ),
             Vector3::new(
-                (
-                    self.cfg.given.needle_distance * (self.cfg.given.needle_count - 2) as f64
-                    + self.cfg.given.hill_xshift
-                ) as f32,
+                self.cfg.derived.inner_holder_xmax as f32,
                 (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
-                (self.cfg.given.steel_thickness + self.cfg.given.thickness)
-                    as f32,
+                (self.cfg.given.steel_thickness + self.cfg.given.thickness) as f32,
             ),
         ]
     }
@@ -269,15 +313,16 @@ impl SDFSurface for InnerHolder {
         let z = p.z as f64;
         let comp = Computation::new(&self.cfg, x, y, z);
 
-        SDFSample::new(
-            comp.inner_holder()
-                .max(-self.cfg.given.steel_thickness - self.cfg.given.thickness - z)
-                .max(z - self.cfg.given.steel_thickness - self.cfg.given.thickness)
+        let inner_holder = 
+            inner_holder(&comp)
                 .max(
-                    -comp.needle_handle()
+                    -comp.inner_needle_handle()
                         .max(-self.cfg.given.steel_thickness - z)
                         .max(z - self.cfg.given.steel_thickness),
-                ) as f32,
+                ) as f32;
+
+        SDFSample::new(
+            inner_holder,
             Vector3::new(1.0, 1.0, 0.0),
         )
     }
@@ -296,39 +341,114 @@ fn circ_coordinates(x: f64, y: f64, a: f64) -> (f64, f64) {
     (x3, y3)
 }
 
+fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
+    let mut d = trapezoid(x, y, cfg.given.needle_xs1[0], cfg.given.needle_xs2[0], cfg.given.needle_ys[0]);
+    for i in 1..cfg.given.needle_ys.len() {
+        let x1 = if i & 1 == 0 {
+            x + (cfg.given.needle_xs1[i] - cfg.given.needle_xs2[i-1])/2.0
+        } else { x };
+        d = d.min(trapezoid(
+            x1, y - cfg.given.needle_ys[i-1],
+            cfg.given.needle_xs1[i], cfg.given.needle_xs2[i],
+            cfg.given.needle_ys[i] - cfg.given.needle_ys[i-1],
+        ));
+    }
+    d.max(cfg.given.needle_cut_r.powi(2) - x*x - (y + cfg.given.needle_cut_y).powi(2))
+}
+
+fn inner_needles_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
+    let mut d = needle_straight(cfg, x, y);
+    for i in 1..cfg.given.needle_count - 1 {
+        d = d.min(needle_straight(cfg, x - cfg.given.needle_distance * i as f64, y));
+    }
+    d
+}
+
+fn outer_needles_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
+    let x2 = x + cfg.derived.needle_distance_x_diag;
+    let mut d = needle_straight(cfg, x2, y);
+    for i in 1..cfg.given.needle_count {
+        d = d.min(needle_straight(cfg, x2 - cfg.given.needle_distance * i as f64, y));
+    }
+    d
+}
+
+fn inner_needle(comp: &Computation) -> f64 {
+    let (xc, yc) = circ_coordinates(
+        comp.x + comp.cfg.derived.inner_needle_x, comp.y, comp.cfg.given.penetration_angle);
+    inner_needles_straight(comp.cfg, xc - comp.cfg.derived.inner_needle_x, yc)
+        .max(comp.y - 2.0)
+        .min(
+            comp.inner_needle_handle()
+                .max(-comp.x - comp.cfg.given.hill_xshift)
+                .max(comp.x - comp.cfg.derived.inner_holder_xmax)
+        )
+        .max(-comp.cfg.given.steel_thickness - comp.z)
+        .max(comp.z - comp.cfg.given.steel_thickness)
+}
+
+fn outer_needle(comp: &Computation) -> f64 {
+    let (xc, yc) = circ_coordinates(
+        comp.x + comp.cfg.derived.inner_needle_x, comp.y, comp.cfg.given.penetration_angle);
+    outer_needles_straight(comp.cfg, xc - comp.cfg.derived.inner_needle_x, yc)
+        .max(comp.y - 2.0)
+        .min(
+            comp.outer_needle_handle()
+                .max(-comp.x + comp.cfg.derived.outer_holder_xmin)
+                .max(comp.x - comp.cfg.derived.outer_holder_xmax)
+                .max(
+                    (comp.y - comp.cfg.given.needletop_width)
+                        .min(
+                            (-comp.x - comp.cfg.derived.needle_distance_x_diag)
+                                .max(
+                                    comp.x - comp.cfg.derived.outer_holder_xmax
+                                        + comp.cfg.derived.needle_halfwidth
+                                )
+                        )
+                )
+        )
+        // .max(comp.x - comp.cfg.derived.inner_holder_xmax)
+        .max(-comp.cfg.given.steel_thickness - comp.cfg.derived.needle_distance_z - comp.z)
+        .max(comp.z - comp.cfg.given.steel_thickness + comp.cfg.derived.needle_distance_z)
+}
+
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
 pub struct InnerNeedle {
     cfg: Settings,
 }
 
-impl InnerNeedle {
-    fn needle_straight(&self, x: f64, y: f64) -> f64 {
-        let mut d = trapezoid(x, y, self.cfg.given.needle_xs1[0], self.cfg.given.needle_xs2[0], self.cfg.given.needle_ys[0]);
-        for i in 1..self.cfg.given.needle_ys.len() {
-            let x1 = if i & 1 == 0 { x + (self.cfg.given.needle_xs1[i] - self.cfg.given.needle_xs2[i-1])/2.0 } else { x };
-            d = d.min(trapezoid(
-                x1, y - self.cfg.given.needle_ys[i-1],
-                self.cfg.given.needle_xs1[i], self.cfg.given.needle_xs2[i],
-                self.cfg.given.needle_ys[i] - self.cfg.given.needle_ys[i-1],
-            ));
-        }
-        d
-    }
-}
-
 impl SDFSurface for InnerNeedle {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
-            Vector3::new(-14.5, -10.0, -self.cfg.given.steel_thickness as f32),
-            Vector3::new(14.5, 200.0, self.cfg.given.steel_thickness as f32),
+            Vector3::new(
+                -30.0 - self.cfg.derived.needle_distance_x_diag as f32,
+                -120.0,
+                (-self.cfg.given.steel_thickness - self.cfg.derived.needle_distance_z) as f32,
+            ),
+            Vector3::new(
+                self.cfg.derived.outer_holder_xmax as f32 + 10.0,
+                (self.cfg.given.hill_height + self.cfg.given.needletop_width) as f32,
+                self.cfg.given.steel_thickness as f32,
+            ),
         ]
     }
 
     fn sample(&self, p: Vector3<f32>, _distance_only: bool) -> SDFSample {
-        let (x, y) = circ_coordinates(p.x as f64 + 215.0 - 6.5, p.y as f64, 0.03);
+        let x = p.x as f64;
+        let y = p.y as f64;
+        let z = p.z as f64;
+        let comp = Computation::new(&self.cfg, x, y, z);
+
         SDFSample::new(
-            self.needle_straight(x + 6.5 - 215.0, y) as f32,
+            inner_needle(&comp)
+                .min(outer_needle(&comp))
+                as f32,
             Vector3::new(1.0, 0.0, 1.0),
         )
     }
+}
+
+#[derive(clap::Parser, Debug, Clone, PartialEq)]
+pub struct OuterNeedle {
+    cfg: Settings,
 }
