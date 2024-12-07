@@ -6,7 +6,7 @@ use clap;
 
 #[no_mangle]
 pub extern "C" fn init() {
-    set_root_sdf(Box::new(InnerHolder { cfg: Settings::default() }));
+    set_root_sdf(Box::new(Holder { cfg: Settings::default() }));
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +37,13 @@ struct GivenSettings {
     needle_xs2: Vec<f64>,
     needle_cut_y: f64,
     needle_cut_r: f64,
+
+    show_outer_holder1: bool,
+    show_outer_holder2: bool,
+    show_inner_holder: bool,
+    show_connector: bool,
+    show_inner_needle: bool,
+    show_outer_needle: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,7 +119,7 @@ impl Default for GivenSettings {
             needletop_slope: 0.35,
             needletop_width: 12.0,
             outer_needletop_width: 16.0,
-            outer_holder_height: 50.0,
+            outer_holder_height: 60.0,
             hill_slope: -0.35,
             hill_slope_z: 0.40,
             hill_xshift: 8.0,
@@ -151,6 +158,13 @@ impl Default for GivenSettings {
             ],
             needle_cut_y: 0.6,
             needle_cut_r: 0.8,
+
+            show_outer_holder1: true,
+            show_outer_holder2: true,
+            show_inner_holder: true,
+            show_connector: true,
+            show_inner_needle: true,
+            show_outer_needle: true,
         }
     }
 }
@@ -323,47 +337,52 @@ fn inner_holder(comp: &Computation) -> f64 {
 }
 
 fn outer_holder(comp: &Computation) -> f64 {
-    let outer_r =
-        comp.cfg.given.first_needle_x - comp.cfg.given.hill_xshift - comp.cfg.given.holder_gap;
-    let outer_circle =
-        ((comp.x + comp.cfg.given.first_needle_x).powi(2) + comp.y.powi(2)).sqrt() - outer_r;
-
-    let mut outer_circle_z = INFINITY;
-    for i in 0..comp.cfg.given.needle_count_z - 1 {
-        let zp = comp.cfg.given.needle_distance_z * i as f64 * 2.0;
-        outer_circle_z = outer_circle_z
-            .min(
-                (-comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap + zp)
-                .max(comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap - zp)
-                );
-    }
-
     (comp.holderbottom_outer() - comp.y)
     .max(-comp.z + comp.cfg.derived.outer_holder_zmin)
     .max(comp.z - comp.cfg.derived.outer_holder_zmax)
     .max(
-        (comp.cfg.derived.outer_holder_xmin - comp.x)
-        .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
-        .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
-        .max(outer_circle.min(-outer_circle_z))
+        if comp.cfg.given.show_outer_holder1 {
+            let outer_r = comp.cfg.given.first_needle_x
+                - comp.cfg.given.hill_xshift - comp.cfg.given.holder_gap;
+            let outer_circle =
+                ((comp.x + comp.cfg.given.first_needle_x).powi(2) + comp.y.powi(2)).sqrt()
+                - outer_r;
+
+            let mut outer_circle_z = INFINITY;
+            for i in 0..comp.cfg.given.needle_count_z - 1 {
+                let zp = comp.cfg.given.needle_distance_z * i as f64 * 2.0;
+                outer_circle_z = outer_circle_z
+                    .min(
+                        (-comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap + zp)
+                        .max(comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap - zp)
+                        );
+            };
+
+            (comp.cfg.derived.outer_holder_xmin - comp.x)
+            .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
+            .max(comp.x - comp.cfg.derived.outer_holder_xmin - comp.cfg.given.outer_thickness)
+            .max(outer_circle.min(-outer_circle_z))
+        } else { INFINITY }
         .min(
-            (comp.x - comp.cfg.derived.outer_holder_xmax)
-            .max(comp.cfg.derived.outer_holder_xmax - comp.cfg.given.outer_thickness - comp.x)
+            if comp.cfg.given.show_outer_holder2 {
+                (comp.x - comp.cfg.derived.outer_holder_xmax)
+                .max(comp.cfg.derived.outer_holder_xmax - comp.cfg.given.outer_thickness - comp.x)
+            } else { INFINITY }
         )
     )
 }
 
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
-pub struct InnerHolder {
+pub struct Holder {
     cfg: Settings,
 }
 
-impl SDFSurface for InnerHolder {
+impl SDFSurface for Holder {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
-                self.cfg.derived.outer_holder_xmin as f32,
-                0.0,
+                -30.0 + self.cfg.derived.outer_holder_xmin as f32,
+                -120.0,
                 self.cfg.derived.outer_holder_zmin as f32,
             ),
             Vector3::new(
@@ -396,29 +415,45 @@ impl SDFSurface for InnerHolder {
         let inner_circle =
             ((x + self.cfg.given.first_needle_x).powi(2) + y*y).sqrt() - inner_r;
 
-        let inner_holder = 
-            inner_holder(&comp)
-                .max(
-                    -comp.inner_needle_handle()
-                        .max(-self.cfg.given.steel_thickness - z)
-                        .max(z - self.cfg.given.steel_thickness),
-                )
-                .min(
-                    comp.needletop_connect()
-                        .max(-self.cfg.given.hill_xshift - x)
-                        .max(self.cfg.given.thickness - z)
-                        .max(z - self.cfg.given.needle_distance_z*2.0 + self.cfg.given.thickness)
-                )
-                .max(inner_circle)
-                .min(
-                    outer_holder(&comp)
-                        .max(-comp.outer_needle_handle().max(outer_needle_z))
-                        .max(y - self.cfg.given.outer_holder_height)
-                )
-                as f32;
+        let mut result = INFINITY;
+
+        if self.cfg.given.show_inner_holder {
+            result = result.min(
+                inner_holder(&comp)
+                    .max(
+                        -comp.inner_needle_handle()
+                            .max(-self.cfg.given.steel_thickness - z)
+                            .max(z - self.cfg.given.steel_thickness),
+                    )
+            );
+        }
+
+
+        if self.cfg.given.show_connector {
+            result = result.min(
+                comp.needletop_connect()
+                    .max(-self.cfg.given.hill_xshift - x)
+                    .max(self.cfg.given.thickness - z)
+                    .max(z - self.cfg.given.needle_distance_z*2.0 + self.cfg.given.thickness)
+            );
+        }
+
+        result = result.max(inner_circle);
+        result = result.min(
+            outer_holder(&comp)
+                .max(-comp.outer_needle_handle().max(outer_needle_z))
+                .max(y - self.cfg.given.outer_holder_height)
+        );
+
+        if self.cfg.given.show_inner_needle {
+            result = result.min(inner_needle(&comp));
+        }
+        if self.cfg.given.show_outer_needle {
+            result = result.min(outer_needle(&comp));
+        }
 
         SDFSample::new(
-            inner_holder,
+            result as f32,
             Vector3::new(1.0, 1.0, 0.0),
         )
     }
@@ -498,11 +533,11 @@ fn outer_needle(comp: &Computation) -> f64 {
 }
 
 #[derive(clap::Parser, Debug, Clone, PartialEq)]
-pub struct InnerNeedle {
+pub struct Needle {
     cfg: Settings,
 }
 
-impl SDFSurface for InnerNeedle {
+impl SDFSurface for Needle {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
