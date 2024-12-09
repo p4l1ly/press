@@ -31,6 +31,7 @@ struct GivenSettings {
     steel_thickness: f64,
     penetration_angle: f64,
     holder_gap: f64,
+    holder_gap_z: f64,
 
     needle_ys: Vec<f64>,
     needle_xs1: Vec<f64>,
@@ -94,6 +95,7 @@ impl FromStr for Settings {
                 "outer_thickness" => settings.outer_thickness = value.parse().map_err(|e| format!("{}", e))?,
                 "steel_thickness" => settings.steel_thickness = value.parse().map_err(|e| format!("{}", e))?,
                 "holder_gap" => settings.holder_gap = value.parse().map_err(|e| format!("{}", e))?,
+                "holder_gap_z" => settings.holder_gap_z = value.parse().map_err(|e| format!("{}", e))?,
 
                 "needle_ys" => settings.needle_ys = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
                 "needle_xs1" => settings.needle_xs1 = value.split(',').map(|s| s.parse().map_err(|e| format!("{}", e))).collect::<Result<_, _>>()?,
@@ -113,15 +115,15 @@ impl Default for GivenSettings {
         Self {
             first_needle_x: 153.0,
             needle_distance: 50.0,
-            needle_distance_z: 40.0,
+            needle_distance_z: 25.0,
             needle_count: 4,
-            needle_count_z: 4,
+            needle_count_z: 7,
             needletop_slope: 0.35,
             needletop_width: 12.0,
             outer_needletop_width: 16.0,
             outer_holder_height: 60.0,
             hill_slope: -0.35,
-            hill_slope_z: 0.40,
+            hill_slope_z: -0.45,
             hill_xshift: 8.0,
             hill_zshift_outer: 30.0,
             hill_height: 12.0,
@@ -131,6 +133,7 @@ impl Default for GivenSettings {
             steel_thickness: 1.5,
             penetration_angle: 0.3,
             holder_gap: 2.0,
+            holder_gap_z: 5.0,
 
             needle_ys: vec![
                 183.0 / 215.0 * 10.0,
@@ -332,8 +335,6 @@ fn inner_holder(comp: &Computation) -> f64 {
     (comp.holderbottom_inner() - comp.y)
     .max(-comp.cfg.given.thickness - comp.z)
     .max(comp.z - comp.cfg.given.thickness)
-    .max(-comp.x - comp.cfg.given.hill_xshift)
-    .max(comp.x - comp.cfg.derived.inner_holder_xmax)
 }
 
 fn outer_holder(comp: &Computation) -> f64 {
@@ -353,8 +354,8 @@ fn outer_holder(comp: &Computation) -> f64 {
                 let zp = comp.cfg.given.needle_distance_z * i as f64 * 2.0;
                 outer_circle_z = outer_circle_z
                     .min(
-                        (-comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap + zp)
-                        .max(comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap - zp)
+                        (-comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap_z + zp)
+                        .max(comp.z - comp.cfg.given.thickness - comp.cfg.given.holder_gap_z - zp)
                         );
             };
 
@@ -409,11 +410,13 @@ impl SDFSurface for Holder {
                     );
         }
 
+        let inner_r1 = self.cfg.given.first_needle_x - self.cfg.given.hill_xshift;
         let inner_r =
             self.cfg.given.first_needle_x + self.cfg.derived.outer_holder_xmax
             - self.cfg.given.outer_thickness - self.cfg.given.holder_gap;
         let inner_circle =
-            ((x + self.cfg.given.first_needle_x).powi(2) + y*y).sqrt() - inner_r;
+            (((x + self.cfg.given.first_needle_x).powi(2) + y*y).sqrt() - inner_r)
+            .max(inner_r1 - ((x + self.cfg.given.first_needle_x).powi(2) + y*y).sqrt());
 
         let mut result = INFINITY;
 
@@ -432,7 +435,6 @@ impl SDFSurface for Holder {
         if self.cfg.given.show_connector {
             result = result.min(
                 comp.needletop_connect()
-                    .max(-self.cfg.given.hill_xshift - x)
                     .max(self.cfg.given.thickness - z)
                     .max(z - self.cfg.given.needle_distance_z*2.0 + self.cfg.given.thickness)
             );
