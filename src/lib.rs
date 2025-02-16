@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, f64::INFINITY, str::FromStr};
+use std::{f64::INFINITY, str::FromStr};
 
 use cgmath::Vector3;
 use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
@@ -117,7 +117,7 @@ impl Default for GivenSettings {
             needle_distance: 50.0,
             needle_distance_z: 25.0,
             needle_count: 4,
-            needle_count_z: 7,
+            needle_count_z: 3,
             needletop_slope: 0.35,
             needletop_width: 12.0,
             outer_needletop_width: 16.0,
@@ -128,12 +128,12 @@ impl Default for GivenSettings {
             hill_zshift_outer: 30.0,
             hill_height: 12.0,
             hill_middle_pos: 0.6,
-            thickness: 20.0,
+            thickness: 15.0,
             outer_thickness: 20.0,
             steel_thickness: 1.5,
             penetration_angle: 0.3,
             holder_gap: 2.0,
-            holder_gap_z: 5.0,
+            holder_gap_z: 2.0,
 
             needle_ys: vec![
                 183.0 / 215.0 * 10.0,
@@ -163,11 +163,11 @@ impl Default for GivenSettings {
             needle_cut_r: 0.8,
 
             show_outer_holder1: true,
-            show_outer_holder2: true,
-            show_inner_holder: true,
-            show_connector: true,
-            show_inner_needle: true,
-            show_outer_needle: true,
+            show_outer_holder2: false,
+            show_inner_holder: false,
+            show_connector: false,
+            show_inner_needle: false,
+            show_outer_needle: false,
         }
     }
 }
