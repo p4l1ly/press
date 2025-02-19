@@ -9,6 +9,17 @@ pub extern "C" fn init() {
     set_root_sdf(Box::new(Holder { cfg: Settings::default() }));
 }
 
+pub fn main() {
+    println!(
+        "Hello, world! {} {} {}",
+        Settings::default().derived.outer_holder_xmax,
+        Settings::default().derived.outer_holder_xmin,
+        Settings::default().derived.outer_holder_xmax
+        - Settings::default().derived.outer_holder_xmin
+        - 19.0,
+    );
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct GivenSettings {
     first_needle_x: f64,
@@ -129,7 +140,7 @@ impl Default for GivenSettings {
             hill_height: 12.0,
             hill_middle_pos: 0.6,
             thickness: 15.0,
-            outer_thickness: 20.0,
+            outer_thickness: 19.0,
             steel_thickness: 1.5,
             penetration_angle: 0.3,
             holder_gap: 2.0,
@@ -162,8 +173,8 @@ impl Default for GivenSettings {
             needle_cut_y: 0.6,
             needle_cut_r: 0.8,
 
-            show_outer_holder1: true,
-            show_outer_holder2: false,
+            show_outer_holder1: false,
+            show_outer_holder2: true,
             show_inner_holder: false,
             show_connector: false,
             show_inner_needle: false,
@@ -382,14 +393,14 @@ impl SDFSurface for Holder {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
-                -30.0 + self.cfg.derived.outer_holder_xmin as f32,
-                -120.0,
-                self.cfg.derived.outer_holder_zmin as f32,
+                -30.0 + self.cfg.derived.outer_holder_xmin as f32 - 5.0,
+                -120.0 - 5.0,
+                self.cfg.derived.outer_holder_zmin as f32 - 5.0,
             ),
             Vector3::new(
-                self.cfg.derived.outer_holder_xmax as f32,
-                130.0,
-                self.cfg.derived.outer_holder_zmax as f32,
+                self.cfg.derived.outer_holder_xmax as f32 + 5.0,
+                130.0 + 5.0,
+                self.cfg.derived.outer_holder_zmax as f32 + 5.0,
             ),
         ]
     }

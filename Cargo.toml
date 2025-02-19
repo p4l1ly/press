@@ -12,3 +12,7 @@ once_cell = "1.8.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "press"
+path = "src/lib.rs"
