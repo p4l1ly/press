@@ -573,7 +573,6 @@ name = "press"
 version = "0.1.0"
 dependencies = [
  "cgmath",
- "clap",
  "once_cell",
  "sdf-viewer",
  "wasm-bindgen",
@@ -658,7 +657,7 @@ checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
 
 [[package]]
 name = "sdf-viewer"
-version = "1.6.5"
+version = "1.6.6"
 dependencies = [
  "android_logger",
  "auto_impl",
