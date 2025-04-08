@@ -5,7 +5,7 @@ use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
 
 #[no_mangle]
 pub extern "C" fn init() {
-    set_root_sdf(Box::new(Holder { cfg: Settings::default() }));
+    set_root_sdf(Box::new(Needle { cfg: Settings::default() }));
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +69,8 @@ pub struct Settings {
     pub derived: DerivedSettings,
 }
 
+const NEEDLE_SHRINK: f64 = 1.0; // 183.0 / 215.0;
+
 impl Default for GivenSettings {
     fn default() -> Self {
         Self {
@@ -97,40 +99,40 @@ impl Default for GivenSettings {
             inner_holder_xmin: -40.0,
 
             needle_ys: vec![
-                183.0 / 215.0 * 10.0,
-                183.0 / 215.0 * 16.5,
-                183.0 / 215.0 * 22.0,
-                183.0 / 215.0 * 31.0,
-                183.0 / 215.0 * 36.5,
-                183.0 / 215.0 * 200.0,
+                NEEDLE_SHRINK * 10.0,
+                NEEDLE_SHRINK * 16.5,
+                NEEDLE_SHRINK * 22.0,
+                NEEDLE_SHRINK * 31.0,
+                // NEEDLE_SHRINK * 36.5,
+                NEEDLE_SHRINK * 200.0,
             ],
             needle_xs1: vec![
-                183.0 / 215.0 * 2.0,
-                183.0 / 215.0 * 6.0,
-                183.0 / 215.0 * 9.0,
-                183.0 / 215.0 * 11.0,
-                183.0 / 215.0 * 13.0,
-                183.0 / 215.0 * 14.5,
+                NEEDLE_SHRINK * 1.5,
+                NEEDLE_SHRINK * 6.0,
+                NEEDLE_SHRINK * 8.0,
+                NEEDLE_SHRINK * 9.5,
+                NEEDLE_SHRINK * 11.0,
+                // NEEDLE_SHRINK * 14.5,
             ],
             needle_xs2: vec![
-                183.0 / 215.0 * 4.5,
-                183.0 / 215.0 * 7.5,
-                183.0 / 215.0 * 9.5,
-                183.0 / 215.0 * 11.5,
-                183.0 / 215.0 * 13.0,
-                183.0 / 215.0 * 14.5,
+                NEEDLE_SHRINK * 4.5,
+                NEEDLE_SHRINK * 7.0,
+                NEEDLE_SHRINK * 8.0,
+                NEEDLE_SHRINK * 9.5,
+                NEEDLE_SHRINK * 11.0,
+                // NEEDLE_SHRINK * 14.5,
             ],
             needle_cut_y: 0.6,
-            needle_cut_r: 0.8,
+            needle_cut_r: 0.4,
 
             show_outer_holder1: false,
             show_outer_holder2: false,
-            show_inner_holder: true,
-            show_inner_hole: true,
+            show_inner_holder: false,
+            show_inner_hole: false,
             inner_holder_flat_z: false,
             show_connector: false,
-            show_inner_needle: false,
-            show_outer_needle: false,
+            show_inner_needle: true,
+            show_outer_needle: true,
         }
     }
 }
@@ -430,6 +432,7 @@ impl SDFSurface for Holder {
 }
 
 fn trapezoid(x: f64, y: f64, w1: f64, w2: f64, h: f64) -> f64 {
+    // println!("trapezoid {} {} {} {} {}", x, y, w1, w2, h);
     let k = (w1 + y * (w2 - w1) / h) / 2.0;
     (x - k).max(-k - x).max(-y).max(y - h)
 }
@@ -442,14 +445,20 @@ fn circ_coordinates(x: f64, y: f64, a: f64) -> (f64, f64) {
     (x3, y3)
 }
 
-fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
+pub fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
     let mut d = trapezoid(x, y, cfg.given.needle_xs1[0], cfg.given.needle_xs2[0], cfg.given.needle_ys[0]);
+    let mut right = 0.5 * cfg.given.needle_xs2[0];
+    let mut left = -right;
     for i in 1..cfg.given.needle_ys.len() {
-        let x1 = if i & 1 == 0 {
-            x + (cfg.given.needle_xs1[i] - cfg.given.needle_xs2[i-1])/2.0
-        } else { x };
+        let shift =
+            if i & 1 == 1 { 0.5 * cfg.given.needle_xs1[i] - right }
+            else { -0.5 * cfg.given.needle_xs1[i] - left };
+        // println!("shift {} {} {}", shift, left, right);
+        left = -shift - 0.5 * cfg.given.needle_xs2[i];
+        right = -shift + 0.5 * cfg.given.needle_xs2[i];
+        // println!("lr {} {}", left, right);
         d = d.min(trapezoid(
-            x1, y - cfg.given.needle_ys[i-1],
+            x + shift, y - cfg.given.needle_ys[i-1],
             cfg.given.needle_xs1[i], cfg.given.needle_xs2[i],
             cfg.given.needle_ys[i] - cfg.given.needle_ys[i-1],
         ));
