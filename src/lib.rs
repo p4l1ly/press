@@ -69,8 +69,6 @@ pub struct Settings {
     pub derived: DerivedSettings,
 }
 
-const NEEDLE_SHRINK: f64 = 1.0; // 183.0 / 215.0;
-
 impl Default for GivenSettings {
     fn default() -> Self {
         Self {
@@ -92,35 +90,32 @@ impl Default for GivenSettings {
             thickness: 18.0,
             outer_thickness: 19.0,
             steel_thickness: 1.5,
-            penetration_angle: 0.3,
+            penetration_angle: 0.35,
             holder_gap: 2.0,
             holder_gap_z: 2.0,
             inner_holder_height: 130.0,
             inner_holder_xmin: -40.0,
 
             needle_ys: vec![
-                NEEDLE_SHRINK * 10.0,
-                NEEDLE_SHRINK * 16.5,
-                NEEDLE_SHRINK * 22.0,
-                NEEDLE_SHRINK * 31.0,
-                // NEEDLE_SHRINK * 36.5,
-                NEEDLE_SHRINK * 200.0,
+                8.5,
+                14.0,
+                18.7,
+                26.4,
+                170.2,
             ],
             needle_xs1: vec![
-                NEEDLE_SHRINK * 1.5,
-                NEEDLE_SHRINK * 6.0,
-                NEEDLE_SHRINK * 8.0,
-                NEEDLE_SHRINK * 9.5,
-                NEEDLE_SHRINK * 11.0,
-                // NEEDLE_SHRINK * 14.5,
+                1.3,
+                5.1,
+                6.4,
+                7.7,
+                9.0,
             ],
             needle_xs2: vec![
-                NEEDLE_SHRINK * 4.5,
-                NEEDLE_SHRINK * 7.0,
-                NEEDLE_SHRINK * 8.0,
-                NEEDLE_SHRINK * 9.5,
-                NEEDLE_SHRINK * 11.0,
-                // NEEDLE_SHRINK * 14.5,
+                3.8,
+                5.1,
+                6.4,
+                7.7,
+                9.0,
             ],
             needle_cut_y: 0.6,
             needle_cut_r: 0.4,

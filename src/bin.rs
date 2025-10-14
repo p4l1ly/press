@@ -11,5 +11,9 @@ pub fn main() {
     );
 
     needle_straight(&cfg, 0.0, 0.0);
+
+    println!("{:?}", cfg.given.needle_ys);
+    println!("{:?}", cfg.given.needle_xs1);
+    println!("{:?}", cfg.given.needle_xs2);
 }
 
