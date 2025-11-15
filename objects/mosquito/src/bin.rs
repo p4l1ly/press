@@ -1,4 +1,4 @@
-use press::{Settings,needle_straight};
+use press_mosquito::{Settings, needle_straight};
 
 pub fn main() {
     let cfg = Settings::default();

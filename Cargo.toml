@@ -1,17 +1,7 @@
-[package]
-name = "press"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-sdf-viewer = { path = "../sdf-viewer", features = ["sdfffi"], default-features = false }
-cgmath = { version = "0.18" } # Math library (shared with three-d)
-wasm-bindgen = "0.2.95"
-once_cell = "1.8.0"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "press"
-path = "src/bin.rs"
+[workspace]
+resolver = "2"
+members = [
+    "common",
+    "objects/mosquito",
+    "objects/template",
+]

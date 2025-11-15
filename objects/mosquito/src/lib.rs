@@ -1,11 +1,11 @@
 use std::f64::INFINITY;
 
 use cgmath::Vector3;
-use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
+use press_common::{create_computation, SDFSample, SDFSurface, set_root_sdf};
 
 #[no_mangle]
 pub extern "C" fn init() {
-    set_root_sdf(Box::new(Needle { cfg: Settings::default() }));
+    set_root_sdf(Box::new(Mosquito { cfg: Settings::default() }));
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -170,36 +170,6 @@ impl Default for Settings {
     }
 }
 
-macro_rules! create_computation {
-    ($cfg:ty, $( $field:ident: $type:ty => $calc:expr ),* ) => {
-        struct Computation<'a> {
-            cfg: &'a $cfg,
-            x: f64,
-            y: f64,
-            z: f64,
-            $( $field: once_cell::unsync::OnceCell<$type>, )*
-        }
-
-        impl<'a> Computation<'a> {
-            fn new(cfg: &'a $cfg, x: f64, y: f64, z: f64) -> Self {
-                Self {
-                    cfg,
-                    x,
-                    y,
-                    z,
-                    $( $field: once_cell::unsync::OnceCell::new(), )*
-                }
-            }
-
-            $(
-                fn $field(&self) -> $type {
-                    *self.$field.get_or_init(|| $calc(self))
-                }
-            )*
-        }
-    };
-}
-
 fn xcos_outer(cfg: &Settings, x: f64) -> f64 {
     let x = x + cfg.derived.needle_distance_x_diag;
     -(x * 2.0 * std::f64::consts::PI / cfg.given.needle_distance).cos()
@@ -338,11 +308,11 @@ fn outer_holder(comp: &Computation) -> f64 {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Holder {
+pub struct Mosquito {
     cfg: Settings,
 }
 
-impl SDFSurface for Holder {
+impl SDFSurface for Mosquito {
     fn bounding_box(&self) -> [Vector3<f32>; 2] {
         [
             Vector3::new(
@@ -426,20 +396,6 @@ impl SDFSurface for Holder {
     }
 }
 
-fn trapezoid(x: f64, y: f64, w1: f64, w2: f64, h: f64) -> f64 {
-    // println!("trapezoid {} {} {} {} {}", x, y, w1, w2, h);
-    let k = (w1 + y * (w2 - w1) / h) / 2.0;
-    (x - k).max(-k - x).max(-y).max(y - h)
-}
-
-fn circ_coordinates(x: f64, y: f64, a: f64) -> (f64, f64) {
-    let x2 = x * a.cos() - y * a.sin();
-    let y2 = x * a.sin() + y * a.cos();
-    let x3 = (x2*x2 + y2*y2).sqrt();
-    let y3 = x3 * y2.atan2(x2);
-    (x3, y3)
-}
-
 pub fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
     let mut d = trapezoid(x, y, cfg.given.needle_xs1[0], cfg.given.needle_xs2[0], cfg.given.needle_ys[0]);
     let mut right = 0.5 * cfg.given.needle_xs2[0];
@@ -448,10 +404,8 @@ pub fn needle_straight(cfg: &Settings, x: f64, y: f64) -> f64 {
         let shift =
             if i & 1 == 1 { 0.5 * cfg.given.needle_xs1[i] - right }
             else { -0.5 * cfg.given.needle_xs1[i] - left };
-        // println!("shift {} {} {}", shift, left, right);
         left = -shift - 0.5 * cfg.given.needle_xs2[i];
         right = -shift + 0.5 * cfg.given.needle_xs2[i];
-        // println!("lr {} {}", left, right);
         d = d.min(trapezoid(
             x + shift, y - cfg.given.needle_ys[i-1],
             cfg.given.needle_xs1[i], cfg.given.needle_xs2[i],
@@ -545,4 +499,20 @@ impl SDFSurface for Needle {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OuterNeedle {
     cfg: Settings,
+}
+
+
+/// Circular coordinate transformation
+pub fn circ_coordinates(x: f64, y: f64, a: f64) -> (f64, f64) {
+    let x2 = x * a.cos() - y * a.sin();
+    let y2 = x * a.sin() + y * a.cos();
+    let x3 = (x2 * x2 + y2 * y2).sqrt();
+    let y3 = x3 * y2.atan2(x2);
+    (x3, y3)
+}
+
+/// Trapezoid SDF
+pub fn trapezoid(x: f64, y: f64, w1: f64, w2: f64, h: f64) -> f64 {
+    let k = (w1 + y * (w2 - w1) / h) / 2.0;
+    (x - k).max(-k - x).max(-y).max(y - h)
 }

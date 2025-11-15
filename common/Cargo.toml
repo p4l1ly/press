@@ -1,0 +1,13 @@
+[package]
+name = "press-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cgmath = { version = "0.18" } # Math library (shared with three-d)
+once_cell = "1.8.0"
+sdf-viewer = { path = "../../sdf-viewer", features = ["sdfffi"], default-features = false }
+
+[lib]
+crate-type = ["rlib"]
+

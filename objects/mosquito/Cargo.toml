@@ -1,0 +1,18 @@
+[package]
+name = "press-mosquito"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+press-common = { path = "../../common" }
+cgmath = { version = "0.18" }
+wasm-bindgen = "0.2.95"
+once_cell = "1.8.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "press-mosquito"
+path = "src/bin.rs"
+
