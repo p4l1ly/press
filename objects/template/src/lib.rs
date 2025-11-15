@@ -1,7 +1,8 @@
 // Template for new press objects
 // This is a simple sphere example - modify as needed
 
-use press_common::{set_root_sdf, SDFSample, SDFSurface, Vector3};
+pub use cgmath::Vector3;
+pub use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
 
 /// Entry point called when the WASM module is loaded
 #[no_mangle]

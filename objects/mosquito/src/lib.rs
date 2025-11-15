@@ -1,7 +1,8 @@
 use std::f64::INFINITY;
 
-use cgmath::Vector3;
-use press_common::{create_computation, SDFSample, SDFSurface, set_root_sdf};
+pub use cgmath::Vector3;
+pub use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
+pub use press_common::create_computation;
 
 #[no_mangle]
 pub extern "C" fn init() {

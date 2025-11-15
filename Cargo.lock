@@ -578,6 +578,7 @@ dependencies = [
  "cgmath",
  "once_cell",
  "press-common",
+ "sdf-viewer",
  "wasm-bindgen",
 ]
 
@@ -588,6 +589,7 @@ dependencies = [
  "cgmath",
  "once_cell",
  "press-common",
+ "sdf-viewer",
  "wasm-bindgen",
 ]
 

@@ -1,8 +1,5 @@
 // Common utilities and helpers for all press objects
 
-pub use cgmath::Vector3;
-pub use sdf_viewer::sdf::{ffi::set_root_sdf, SDFSample, SDFSurface};
-
 /// Macro to create computation structs with lazy evaluated fields
 #[macro_export]
 macro_rules! create_computation {
