@@ -572,6 +572,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "press-hut"
+version = "0.1.0"
+dependencies = [
+ "cgmath",
+ "once_cell",
+ "press-common",
+ "sdf-viewer",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "press-mosquito"
 version = "0.1.0"
 dependencies = [

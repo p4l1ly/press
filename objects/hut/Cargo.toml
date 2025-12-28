@@ -1,0 +1,23 @@
+# Template Cargo.toml for new press objects
+# Copy this to objects/<your_object_name>/Cargo.toml
+# Replace <OBJECT_NAME> with your object's name (e.g., "sphere", "cube", etc.)
+
+[package]
+name = "press-hut"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+press-common = { path = "../../common" }
+cgmath = { version = "0.18" }
+wasm-bindgen = "0.2.95"
+once_cell = "1.8.0"
+sdf-viewer = { path = "../../../sdf-viewer", features = ["sdfffi"], default-features = false }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "press-hut"
+path = "src/bin.rs"
+
