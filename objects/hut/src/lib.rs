@@ -62,7 +62,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            material: Material::Straw,
+            material: Material::Theory,
             root_z: 1.0,
             root_r: 2.0,
             wall_r: 5.0,
@@ -227,7 +227,7 @@ impl MyObject {
             door_slope: cfg.door_slope,
             door_length: cfg.door_length,
             half_brick_angle: cfg.half_brick_angle,
-            top: cfg.wall_r - cfg.root_z,
+            top: (cfg.wall_r * cfg.wall_r - cfg.root_r * cfg.root_r).sqrt() - cfg.root_z + cfg.thickness,
             brick_rows: cfg.brick_rows,
             door_bricks: cfg.door_bricks,
             material: cfg.material,
@@ -292,10 +292,6 @@ impl SDFSurface for MyObject {
         let y = p.y;
         let z = p.z;
 
-        let xy_from_root = (x * x + y * y).sqrt() + self.root_r;
-        let z_from_root = z + self.root_z;
-        let distance_from_root = (xy_from_root * xy_from_root + z_from_root * z_from_root).sqrt();
-
         let sdf = match self.material {
              Material::Straw => {
                 let mut brick = std::f32::INFINITY;
@@ -334,6 +330,9 @@ impl SDFSurface for MyObject {
             },
 
             Material::Theory => {
+                let xy_from_root = (x * x + y * y).sqrt() + self.root_r;
+                let z_from_root = z + self.root_z;
+                let distance_from_root = (xy_from_root * xy_from_root + z_from_root * z_from_root).sqrt();
                 let xy_angle = y.atan2(x);
         
                 let sdf = distance_from_root - self.wall_r - self.thickness;
@@ -346,13 +345,13 @@ impl SDFSurface for MyObject {
                 let door_sdf = door_sdf.max(-(door_distance_from_root - self.door_wall_r + self.thickness));
                 let door_sdf = door_sdf.max(-x).max(x - self.door_length);
                 let sdf = sdf.min(door_sdf);
-                sdf.max(-(distance_from_root - self.wall_r + self.thickness)).max(-z)
+                sdf.max(-(distance_from_root - self.wall_r + self.thickness)).max(-z).max(z - self.top)
             },
         };
 
         SDFSample::new(
             sdf,
-            Vector3::new((distance_from_root / self.wall_r / 1.5).powf(3.0), 0.0, 0.0), // Color (RGB)
+            Vector3::new(((x*x + y*y + z*z).sqrt() / self.door_length / 1.2).powf(3.0), 0.0, 0.0), // Color (RGB)
         )
     }
 }
