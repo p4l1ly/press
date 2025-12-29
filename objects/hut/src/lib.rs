@@ -23,6 +23,21 @@ pub struct BrickRow {
     pub odd: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct DoorBrick {
+    pub angle: f32,
+    pub shift: f32,
+    pub brick_width: f32,
+}
+
+#[derive(Debug, Clone)]
+pub enum Material {
+    Straw,
+    Wood,
+    Clay,
+    Theory,
+}
+
 /// Configuration for your object
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -37,15 +52,17 @@ pub struct Config {
     pub door_root_r: f32,
     pub door_wall_r: f32,
     pub door_slope: f32,
-    pub door_widening: f32,
     pub door_length: f32,
     pub half_brick_angle: f32,
     pub brick_rows: Vec<BrickRow>,
+    pub door_bricks: Vec<DoorBrick>,
+    pub material: Material,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            material: Material::Straw,
             root_z: 1.0,
             root_r: 2.0,
             wall_r: 5.0,
@@ -55,10 +72,9 @@ impl Default for Config {
             door_angle: 0.5,
             door_root_z: 1.0,
             door_root_r: 4.0,
-            door_wall_r: 6.0,
+            door_wall_r: 6.25,
             door_slope: 0.4,
-            door_widening: 0.0,
-            door_length: 3.5,
+            door_length: 3.6,
             half_brick_angle: 0.1,
             brick_rows: vec![
                 BrickRow {
@@ -116,6 +132,59 @@ impl Default for Config {
                     odd: false,
                 },
             ],
+            door_bricks: vec![
+                DoorBrick {
+                    angle: 0.425,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+                DoorBrick {
+                    angle: 0.5,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+                DoorBrick {
+                    angle: 0.575,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+                DoorBrick {
+                    angle: 0.65,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+                DoorBrick {
+                    angle: 0.725,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+                DoorBrick {
+                    angle: 0.8,
+                    shift: 0.0,
+                    brick_width: 0.4,
+                },
+
+                DoorBrick {
+                    angle: 0.59,
+                    shift: 0.86 - (0.4 - 0.09),
+                    brick_width: 0.09,
+                },
+                DoorBrick {
+                    angle: 0.66,
+                    shift: 0.86 - (0.4 - 0.2),
+                    brick_width: 0.2,
+                },
+                DoorBrick {
+                    angle: 0.73,
+                    shift: 0.86 - (0.4 - 0.33),
+                    brick_width: 0.33,
+                },
+                DoorBrick {
+                    angle: 0.8,
+                    shift: 0.86,
+                    brick_width: 0.4,
+                },
+            ],
         }
     }
 }
@@ -134,11 +203,12 @@ pub struct MyObject {
     pub door_root_r: f32,
     pub door_wall_r: f32,
     pub door_slope: f32,
-    pub door_widening: f32,
     pub door_length: f32,
     pub half_brick_angle: f32,
     pub top: f32,
     pub brick_rows: Vec<BrickRow>,
+    pub door_bricks: Vec<DoorBrick>,
+    pub material: Material,
 }
 
 impl MyObject {
@@ -155,11 +225,12 @@ impl MyObject {
             door_root_r: cfg.door_root_r,
             door_wall_r: cfg.door_wall_r,
             door_slope: cfg.door_slope,
-            door_widening: cfg.door_widening,
             door_length: cfg.door_length,
             half_brick_angle: cfg.half_brick_angle,
             top: cfg.wall_r - cfg.root_z,
             brick_rows: cfg.brick_rows,
+            door_bricks: cfg.door_bricks,
+            material: cfg.material,
         }
     }
 
@@ -171,14 +242,31 @@ impl MyObject {
         // Step 3 inverse: translate by -T2
         let p = translate(p, Vector3::new(0.0, self.root_r, -self.root_z));
         // Step 2 inverse: rotate by -R
-        let p = rotate_x(p, x_angle);
+        let p = rotate_x(p, -x_angle);
         // Step 1 inverse: translate by -T1
         translate(p, Vector3::new(0.0, -self.wall_r, 0.0))
     }
 
     /// Calculate brick SDF at transformed point.
     fn brick_sdf(&self, p: Vector3<f32>) -> f32 {
-        (p.x.abs() - self.brick_width).max(p.z.abs() - self.brick_height).max(p.y.abs() - self.thickness)
+        self.brick_sdf_smaller(p, self.brick_width)
+    }
+
+    fn brick_sdf_smaller(&self, p: Vector3<f32>, brick_width: f32) -> f32 {
+        (p.x.abs() - brick_width).max(p.z.abs() - self.brick_height).max(p.y.abs() - self.thickness)
+    }
+
+    fn transform_door_brick_point(&self, p: Vector3<f32>, x_angle: f32, x_shift: f32) -> Vector3<f32> {
+        // Step 3 inverse: translate by -T2
+        let p = translate(p, Vector3::new(
+            self.door_length - self.brick_width - x_shift,
+             self.door_root_r,
+             -self.door_root_z - self.door_slope * (self.door_length - self.brick_width - x_shift)
+        ));
+        // Step 2 inverse: rotate by -R
+        let p = rotate_x(p, -x_angle);
+        // Step 1 inverse: translate by -T1
+        translate(p, Vector3::new(0.0, -self.door_wall_r, 0.0))
     }
 }
 
@@ -204,43 +292,66 @@ impl SDFSurface for MyObject {
         let y = p.y;
         let z = p.z;
 
-        let xy_angle = y.atan2(x);
         let xy_from_root = (x * x + y * y).sqrt() + self.root_r;
         let z_from_root = z + self.root_z;
         let distance_from_root = (xy_from_root * xy_from_root + z_from_root * z_from_root).sqrt();
 
-        let sdf = distance_from_root - self.wall_r - self.thickness;
-        let sdf = sdf.max(self.door_angle - xy_angle.abs());
+        let sdf = match self.material {
+             Material::Straw => {
+                let mut brick = std::f32::INFINITY;
+                for row in self.brick_rows.iter() {
+                    for i in 0..row.count + row.odd as usize {
+                        let z_angle = PI / 2.0 - self.door_angle - self.half_brick_angle - row.step * i as f32;
 
-        let door_z_from_root = z + self.door_root_z + self.door_slope * x;
-        let door_y_from_root = -y.abs() - self.door_root_r + self.door_widening * x;
-        let door_distance_from_root = (door_y_from_root * door_y_from_root + door_z_from_root * door_z_from_root).sqrt();
-        let door_sdf = door_distance_from_root - self.door_wall_r - self.thickness;
-        let door_sdf = door_sdf.max(-(door_distance_from_root - self.door_wall_r + self.thickness));
-        let door_sdf = door_sdf.max(-x).max(x - self.door_length);
-        let sdf = sdf.min(door_sdf);
-        let sdf = sdf.max(-(distance_from_root - self.wall_r + self.thickness));
+                        // Regular brick
+                        let p = self.transform_brick_point(Vector3::new(x, y, z), z_angle, row.angle);
+                        brick = brick.min(self.brick_sdf(p));
 
-        let mut brick = std::f32::INFINITY;
-        for row in self.brick_rows.iter() {
-            for i in 0..row.count + row.odd as usize {
-                let z_angle = PI / 2.0 - self.door_angle - self.half_brick_angle - row.step * i as f32;
-                let x_angle = -row.angle;
-
-                // Regular brick
-                let p = self.transform_brick_point(Vector3::new(x, y, z), z_angle, x_angle);
-                brick = brick.min(self.brick_sdf(p));
-
-                if i < row.count {
-                    // Brick mirrored by x-z plane
-                    let p = self.transform_brick_point(Vector3::new(x, -y, z), z_angle, x_angle);
-                    brick = brick.min(self.brick_sdf(p));
+                        if i < row.count {
+                            // Brick mirrored by x-z plane
+                            let p = self.transform_brick_point(Vector3::new(x, -y, z), z_angle, row.angle);
+                            brick = brick.min(self.brick_sdf(p));
+                        }
+                    }
                 }
-            }
-        }
+
+                for door_brick in self.door_bricks.iter() {
+                    let p = self.transform_door_brick_point(Vector3::new(x, y, z), door_brick.angle, door_brick.shift);
+                    brick = brick.min(self.brick_sdf_smaller(p, door_brick.brick_width));
+                    let p = self.transform_door_brick_point(Vector3::new(x, -y, z), door_brick.angle, door_brick.shift);
+                    brick = brick.min(self.brick_sdf_smaller(p, door_brick.brick_width));
+                }
+
+                brick
+            },
+
+            Material::Wood => {
+                unimplemented!()
+            },
+
+            Material::Clay => {
+                unimplemented!()
+            },
+
+            Material::Theory => {
+                let xy_angle = y.atan2(x);
+        
+                let sdf = distance_from_root - self.wall_r - self.thickness;
+                let sdf = sdf.max(self.door_angle - xy_angle.abs());
+        
+                let door_z_from_root = z + self.door_root_z + self.door_slope * x;
+                let door_y_from_root = -y.abs() - self.door_root_r;
+                let door_distance_from_root = (door_y_from_root * door_y_from_root + door_z_from_root * door_z_from_root).sqrt();
+                let door_sdf = door_distance_from_root - self.door_wall_r - self.thickness;
+                let door_sdf = door_sdf.max(-(door_distance_from_root - self.door_wall_r + self.thickness));
+                let door_sdf = door_sdf.max(-x).max(x - self.door_length);
+                let sdf = sdf.min(door_sdf);
+                sdf.max(-(distance_from_root - self.wall_r + self.thickness)).max(-z)
+            },
+        };
 
         SDFSample::new(
-            if false { sdf.max(-z).min(brick) } else { brick },
+            sdf,
             Vector3::new((distance_from_root / self.wall_r / 1.5).powf(3.0), 0.0, 0.0), // Color (RGB)
         )
     }
