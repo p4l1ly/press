@@ -36,12 +36,14 @@ pub struct DoorBrick {
     pub frame_height: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Material {
     Straw,
     Wood,
     Clay,
     Theory,
+    Reed,
+    All,
 }
 
 /// Configuration for your object
@@ -59,6 +61,8 @@ pub struct Config {
     pub door_wall_r: f32,
     pub door_slope: f32,
     pub door_length: f32,
+    pub roof_scale: f32,
+    pub roof_bottom: f32,
     pub half_brick_angle: f32,
     pub brick_rows: Vec<BrickRow>,
     pub door_bricks: Vec<DoorBrick>,
@@ -69,7 +73,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            material: Material::Wood,
+            material: Material::All,
             frame_thickness: 0.05,
             root_z: 1.0,
             root_r: 2.0,
@@ -83,6 +87,8 @@ impl Default for Config {
             door_wall_r: 6.25,
             door_slope: 0.4,
             door_length: 3.6,
+            roof_scale: 1.15,
+            roof_bottom: 0.6,
             half_brick_angle: 0.1,
             brick_rows: vec![
                 BrickRow {
@@ -270,6 +276,8 @@ pub struct MyObject {
     pub door_wall_r: f32,
     pub door_slope: f32,
     pub door_length: f32,
+    pub roof_scale: f32,
+    pub roof_bottom: f32,
     pub half_brick_angle: f32,
     pub top: f32,
     pub brick_rows: Vec<BrickRow>,
@@ -293,6 +301,8 @@ impl MyObject {
             door_wall_r: cfg.door_wall_r,
             door_slope: cfg.door_slope,
             door_length: cfg.door_length,
+            roof_scale: cfg.roof_scale,
+            roof_bottom: cfg.roof_bottom,
             half_brick_angle: cfg.half_brick_angle,
             top: (cfg.wall_r * cfg.wall_r - cfg.root_r * cfg.root_r).sqrt() - cfg.root_z + cfg.thickness,
             brick_rows: cfg.brick_rows,
@@ -470,26 +480,87 @@ impl MyObject {
         sdf
     }
 
-    fn theory_sdf(&self, p: Vector3<f32>) -> f32 {
+    fn distance_from_root(&self, p: Vector3<f32>) -> f32 {
         let x = p.x;
         let y = p.y;
         let z = p.z;
         let xy_from_root = (x * x + y * y).sqrt() + self.root_r;
         let z_from_root = z + self.root_z;
-        let distance_from_root = (xy_from_root * xy_from_root + z_from_root * z_from_root).sqrt();
+        (xy_from_root * xy_from_root + z_from_root * z_from_root).sqrt()
+    }
+
+    fn door_distance_from_root(&self, p: Vector3<f32>) -> f32 {
+        let x = p.x;
+        let y = p.y;
+        let z = p.z;
+        let door_z_from_root = z + self.door_root_z + self.door_slope * x;
+        let door_y_from_root = -y.abs() - self.door_root_r;
+        (door_y_from_root * door_y_from_root + door_z_from_root * door_z_from_root).sqrt()
+    }
+
+    fn theory_sdf_outline(&self, p: Vector3<f32>) -> f32 {
+        let x = p.x;
+        let y = p.y;
+        let z = p.z;
+        let distance_from_root = self.distance_from_root(p);
+        let door_distance_from_root = self.door_distance_from_root(p);
         let xy_angle = y.atan2(x);
 
         let sdf = distance_from_root - self.wall_r - self.thickness;
         let sdf = sdf.max(self.door_angle - xy_angle.abs());
 
-        let door_z_from_root = z + self.door_root_z + self.door_slope * x;
-        let door_y_from_root = -y.abs() - self.door_root_r;
-        let door_distance_from_root = (door_y_from_root * door_y_from_root + door_z_from_root * door_z_from_root).sqrt();
         let door_sdf = door_distance_from_root - self.door_wall_r - self.thickness;
-        let door_sdf = door_sdf.max(-(door_distance_from_root - self.door_wall_r + self.thickness));
         let door_sdf = door_sdf.max(-x).max(x - self.door_length);
         let sdf = sdf.min(door_sdf);
-        sdf.max(-(distance_from_root - self.wall_r + self.thickness)).max(-z).max(z - self.top)
+        sdf.max(-z).max(z - self.top)
+    }
+
+    fn theory_sdf_nonroof(&self, p: Vector3<f32>) -> f32 {
+        let distance_from_root = self.distance_from_root(p);
+        let door_distance_from_root = self.door_distance_from_root(p);
+        let room_sdf = -(distance_from_root - self.wall_r + self.thickness);
+        let door_hole_sdf = (-(door_distance_from_root - self.door_wall_r + self.thickness)).min(p.x);
+        self.theory_sdf_outline(p).max(door_hole_sdf).max(room_sdf)
+    }
+
+    fn theory_sdf(&self, p: Vector3<f32>) -> f32 {
+        let distance_from_root = self.distance_from_root(p);
+        let door_distance_from_root = self.door_distance_from_root(p);
+        let room_sdf = -(distance_from_root - self.wall_r + self.thickness);
+        let door_hole_sdf = (-(door_distance_from_root - self.door_wall_r + self.thickness)).min(p.x);
+        let roof = self.theory_sdf_outline(p / self.roof_scale).max(p.x - self.door_length).max(-p.z + self.roof_bottom);
+        self.theory_sdf_outline(p).min(roof).max(door_hole_sdf).max(room_sdf)
+    }
+
+    fn reed_sdf(&self, p: Vector3<f32>) -> f32 {
+        let roof = self.theory_sdf_outline(p / self.roof_scale).max(p.x - self.door_length).max(-p.z + self.roof_bottom);
+        roof.max(-self.theory_sdf_outline(p))
+    }
+
+    fn clay_sdf(&self, p: Vector3<f32>) -> f32 {
+        self.theory_sdf_nonroof(p).max(-self.straw_sdf(p)).max(-self.wood_sdf(p))
+    }
+
+    fn color(&self, material: Material) -> Vector3<f32> {
+        match material {
+            Material::Wood => { Vector3::new(0.8, 0.6, 0.0) },
+            Material::Straw => { Vector3::new(1.0, 1.0, 0.0) },
+            Material::Clay => { Vector3::new(0.6, 0.4, 0.0) },
+            Material::Theory => { Vector3::new(1.0, 0.0, 0.0) },
+            Material::Reed => { Vector3::new(0.3, 0.3, 0.2) },
+            Material::All => { Vector3::new(1.0, 1.0, 1.0) },
+        }
+    }
+
+    fn all_sdf_and_material(&self, p: Vector3<f32>) -> (f32, Vector3<f32>) {
+        let sdf = self.wood_sdf(p);
+        if sdf < 0.0 { return (sdf, self.color(Material::Wood)) }
+        let sdf = self.straw_sdf(p);
+        if sdf < 0.0 { return (sdf, self.color(Material::Straw)) }
+        let sdf = self.reed_sdf(p);
+        if sdf < 0.0 { return (sdf, self.color(Material::Reed)) }
+        let sdf = self.theory_sdf_nonroof(p);
+        (sdf, self.color(Material::Clay))
     }
 }
 
@@ -515,16 +586,20 @@ impl SDFSurface for MyObject {
         let y = p.y;
         let z = p.z;
 
-        let sdf = match self.material {
-            Material::Wood => { self.wood_sdf(p) },
-            Material::Straw => { self.straw_sdf(p).max(-self.wood_sdf(p)) },
-            Material::Clay => { self.theory_sdf(p).max(-self.straw_sdf(p)).max(-self.wood_sdf(p)) },
-            Material::Theory => { self.theory_sdf(p) },
+        let (sdf, color) = match self.material {
+            Material::Wood => { (self.wood_sdf(p), self.color(self.material)) },
+            Material::Straw => { (self.straw_sdf(p).max(-self.wood_sdf(p)), self.color(self.material)) },
+            Material::Clay => { (self.clay_sdf(p), self.color(self.material)) },
+            Material::Theory => { (self.theory_sdf(p), self.color(self.material)) },
+            Material::Reed => { (self.reed_sdf(p), self.color(self.material)) },
+            Material::All => { self.all_sdf_and_material(p) },
         };
+
+        let shade = ((x*x + y*y + z*z).sqrt() / self.door_length / 1.2).powf(3.0);
 
         SDFSample::new(
             sdf,
-            Vector3::new(((x*x + y*y + z*z).sqrt() / self.door_length / 1.2).powf(3.0), 0.0, 0.0), // Color (RGB)
+            color * shade, // Color (RGB)
         )
     }
 }
